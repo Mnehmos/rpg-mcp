@@ -25,12 +25,15 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
+    "@types/seedrandom": "^3.0.8",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^1.6.1"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.6",
+    "seedrandom": "^3.0.5",
+    "simplex-noise": "^4.0.3",
     "zod": "^3.25.76"
   }
 }

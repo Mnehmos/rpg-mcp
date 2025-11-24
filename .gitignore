@@ -41,3 +41,6 @@ yarn-error.log*
 # Temporary files
 tmp/
 temp/
+
+# Reference materials (keep docs, ignore cloned repos)
+reference/azgaar/
