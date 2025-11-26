@@ -18,9 +18,15 @@ src/
   storage/         # SQLite persistence layer
     migrations/    # Database schema definitions
     repos/         # Repository pattern implementations
+  worldgen/        # World generation algorithms
+    heightmap.ts   # Layered noise heightmap generator
+    climate.ts     # Temperature and moisture simulation
+    biome.ts       # Biome assignment logic
+    river.ts       # Hydraulic erosion and river generation
 tests/
   schema/          # Schema validation tests
   storage/         # Storage layer tests
+  worldgen/        # World generation tests
 reference/
   azgaar/          # Reference implementation (not our code)
 ```
@@ -45,6 +51,23 @@ npm run test:coverage # Coverage report
 
 ```bash
 npm run build
+```
+
+## Usage
+
+### World Generation
+
+```typescript
+import { generateWorld } from './src/worldgen';
+
+const world = generateWorld({
+  seed: 'my-deterministic-seed',
+  width: 100,
+  height: 100,
+  landRatio: 0.3, // 30% land
+});
+
+console.log(world.biomes[50][50]); // Access biome at center
 ```
 
 ## Principles
