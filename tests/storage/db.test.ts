@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { initDB } from '../../src/db/index.js';
-import { migrate } from '../../src/db/migrations.js';
+import { initDB } from '../../src/storage/db.js';
+import { migrate } from '../../src/storage/migrations.js';
 import fs from 'fs';
 
 import { FIXED_TIMESTAMP } from '../fixtures';

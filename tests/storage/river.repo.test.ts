@@ -1,12 +1,13 @@
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { RiverRepository } from '../../src/db/repos/river.repo.js';
-import { WorldRepository } from '../../src/db/repos/world.repo.js';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { RiverRepository } from '../../src/storage/repos/river.repo';
+import { WorldRepository } from '../../src/storage/repos/world.repo';
+import { World } from '../../src/schema/world';
 import { RiverPath } from '../../src/schema/river';
 import { FIXED_TIMESTAMP } from '../fixtures';
-import { World } from '../../src/schema/world';
-import fs from 'fs';
 
 const TEST_DB_PATH = 'test-river-repo.db';
 

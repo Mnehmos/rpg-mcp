@@ -1,10 +1,11 @@
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { CharacterRepository } from '../../src/db/repos/character.repo.js';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { CharacterRepository } from '../../src/storage/repos/character.repo';
 import { Character, NPC } from '../../src/schema/character';
 import { FIXED_TIMESTAMP } from '../fixtures';
-import fs from 'fs';
 
 const TEST_DB_PATH = 'test-character-repo.db';
 

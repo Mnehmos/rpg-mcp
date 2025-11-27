@@ -1,12 +1,13 @@
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { StructureRepository } from '../../src/db/repos/structure.repo.js';
-import { WorldRepository } from '../../src/db/repos/world.repo.js';
-import { Structure } from '../../src/schema/structure';
-import { FIXED_TIMESTAMP } from '../fixtures';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { StructureRepository } from '../../src/storage/repos/structure.repo';
+import { WorldRepository } from '../../src/storage/repos/world.repo';
+import { Structure, StructureType } from '../../src/schema/structure';
 import { World } from '../../src/schema/world';
-import fs from 'fs';
+import { FIXED_TIMESTAMP } from '../fixtures';
 
 const TEST_DB_PATH = 'test-structure-repo.db';
 
@@ -48,7 +49,7 @@ describe('StructureRepository', () => {
             id: 'struct-1',
             worldId: 'world-1',
             name: 'Castle Black',
-            type: 'castle',
+            type: StructureType.CASTLE,
             x: 50,
             y: 50,
             population: 100,
@@ -68,7 +69,7 @@ describe('StructureRepository', () => {
             id: 's1',
             worldId: 'world-1',
             name: 'Town 1',
-            type: 'town',
+            type: StructureType.TOWN,
             x: 10,
             y: 10,
             population: 500,
@@ -79,7 +80,7 @@ describe('StructureRepository', () => {
             id: 's2',
             worldId: 'world-1',
             name: 'Village 1',
-            type: 'village',
+            type: StructureType.VILLAGE,
             x: 20,
             y: 20,
             population: 50,

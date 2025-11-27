@@ -1,10 +1,11 @@
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { PatchRepository } from '../../src/db/repos/patch.repo.js';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { PatchRepository } from '../../src/storage/repos/patch.repo';
 import { MapPatch } from '../../src/schema/patch';
 import { FIXED_TIMESTAMP } from '../fixtures';
-import fs from 'fs';
 
 const TEST_DB_PATH = 'test-patch-repo.db';
 

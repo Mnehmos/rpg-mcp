@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import seedrandom from 'seedrandom';
-import { generateRivers } from '../../src/worldgen/river';
+import { generateRivers } from '../../src/engine/worldgen/river';
 
 // ============================================================================
 

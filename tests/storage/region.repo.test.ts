@@ -1,12 +1,13 @@
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { RegionRepository } from '../../src/db/repos/region.repo.js';
-import { WorldRepository } from '../../src/db/repos/world.repo.js';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { RegionRepository } from '../../src/storage/repos/region.repo';
+import { WorldRepository } from '../../src/storage/repos/world.repo';
 import { Region } from '../../src/schema/region';
-import { FIXED_TIMESTAMP } from '../fixtures';
 import { World } from '../../src/schema/world';
-import fs from 'fs';
+import { FIXED_TIMESTAMP } from '../fixtures';
 
 const TEST_DB_PATH = 'test-region-repo.db';
 

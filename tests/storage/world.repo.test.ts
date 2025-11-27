@@ -1,12 +1,13 @@
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { WorldRepository } from '../../src/db/repos/world.repo.js';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { WorldRepository } from '../../src/storage/repos/world.repo';
 import { World } from '../../src/schema/world';
 import { FIXED_TIMESTAMP } from '../fixtures';
-import fs from 'fs';
 
-const TEST_DB_PATH = 'test-repo.db';
+const TEST_DB_PATH = 'test-world-repo.db';
 
 describe('WorldRepository', () => {
     let db: ReturnType<typeof initDB>;

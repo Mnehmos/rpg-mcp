@@ -1,0 +1,48 @@
+import { describe, it, expect } from 'vitest';
+import { handleCreateEncounter, clearCombatState } from '../../src/server/combat-tools';
+import { handleCreateWorld, handleDeleteWorld, getTestDb, closeTestDb } from '../../src/server/crud-tools';
+
+describe('Registered Tools Verification', () => {
+    describe('Combat Tools', () => {
+        it('should create an encounter', async () => {
+            clearCombatState();
+            const result = await handleCreateEncounter({
+                seed: 'test-combat',
+                participants: [
+                    { id: 'p1', name: 'Player', initiativeBonus: 0, hp: 10, maxHp: 10 },
+                    { id: 'e1', name: 'Enemy', initiativeBonus: 0, hp: 10, maxHp: 10 }
+                ]
+            });
+
+            expect(result.content).toBeDefined();
+            const content = JSON.parse(result.content[0].text);
+            expect(content.message).toBe('Combat encounter started');
+            expect(content.encounterId).toBeDefined();
+        });
+    });
+
+    describe('CRUD Tools', () => {
+        it('should create and delete a world', async () => {
+            // Setup DB
+            getTestDb();
+
+            // Create
+            const createResult = await handleCreateWorld({
+                name: 'Test World',
+                seed: 'test-seed',
+                width: 50,
+                height: 50
+            });
+            const created = JSON.parse(createResult.content[0].text);
+            expect(created.id).toBeDefined();
+
+            // Delete
+            const deleteResult = await handleDeleteWorld({ id: created.id });
+            const deleted = JSON.parse(deleteResult.content[0].text);
+            expect(deleted.message).toBe('World deleted');
+
+            // Cleanup
+            closeTestDb();
+        });
+    });
+});

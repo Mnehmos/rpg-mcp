@@ -42,5 +42,17 @@ yarn-error.log*
 tmp/
 temp/
 
+# Binaries and build artifacts
+bin/
+*.exe
+rpg-mcp-*
+
+# Test debug files
+*_debug.txt
+*_errors.txt
+*_output.txt
+tsc_errors.txt
+build_errors.txt
+
 # Reference materials (keep docs, ignore cloned repos)
 reference/azgaar/

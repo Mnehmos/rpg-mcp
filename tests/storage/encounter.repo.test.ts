@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDB } from '../../src/db/index';
-import { migrate } from '../../src/db/migrations';
-import { EncounterRepository } from '../../src/db/repos/encounter.repo.js';
-import { RegionRepository } from '../../src/db/repos/region.repo.js';
-import { WorldRepository } from '../../src/db/repos/world.repo.js';
-import { Encounter } from '../../src/schema/encounter';
-import { Region } from '../../src/schema/region';
+import * as fs from 'fs';
+import { initDB } from '../../src/storage/db';
+import { migrate } from '../../src/storage/migrations';
+import { EncounterRepository } from '../../src/storage/repos/encounter.repo';
+import { RegionRepository } from '../../src/storage/repos/region.repo';
+import { WorldRepository } from '../../src/storage/repos/world.repo';
 import { World } from '../../src/schema/world';
+import { Region } from '../../src/schema/region';
+import { Encounter } from '../../src/schema/encounter';
 import { FIXED_TIMESTAMP } from '../fixtures';
-import fs from 'fs';
 
 const TEST_DB_PATH = 'test-encounter-repo.db';
 

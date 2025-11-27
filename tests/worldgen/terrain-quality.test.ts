@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateHeightmap } from '../../src/worldgen/heightmap';
+import { generateHeightmap } from '../../src/engine/worldgen/heightmap';
 
 /**
  * Terrain Quality Gates
