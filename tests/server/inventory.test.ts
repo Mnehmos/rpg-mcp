@@ -5,9 +5,6 @@ import { closeTestDb } from '../../src/server/crud-tools';
 
 describe('Inventory System', () => {
     const mockCtx = { sessionId: 'test-session' };
-    let characterId: string;
-    let swordId: string;
-    let shieldId: string;
 
     afterEach(() => {
         closeTestDb();
@@ -22,6 +19,31 @@ describe('Inventory System', () => {
         console.log('Tables in test:', tables.map((t: any) => t.name));
     });
 
+    // Helper to create a test character
+    async function createTestCharacter(): Promise<string> {
+        const charResult = await handleCreateCharacter({
+            name: 'Inventory Tester',
+            hp: 10,
+            maxHp: 10,
+            ac: 10,
+            level: 1,
+            stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
+        }, mockCtx);
+        return JSON.parse(charResult.content[0].text).id;
+    }
+
+    // Helper to create a test item
+    async function createTestItem(name: string, type: string, props?: object): Promise<string> {
+        const result = await handleCreateItemTemplate({
+            name,
+            type,
+            weight: 5,
+            value: 10,
+            properties: props
+        }, mockCtx);
+        return JSON.parse(result.content[0].text).id;
+    }
+
     it('should create item templates', async () => {
         const result = await handleCreateItemTemplate({
             name: 'Iron Sword',
@@ -34,7 +56,6 @@ describe('Inventory System', () => {
         const item = JSON.parse(result.content[0].text);
         expect(item.name).toBe('Iron Sword');
         expect(item.id).toBeDefined();
-        swordId = item.id;
 
         // Create a shield too
         const shieldResult = await handleCreateItemTemplate({
@@ -43,20 +64,15 @@ describe('Inventory System', () => {
             weight: 3,
             value: 5
         }, mockCtx);
-        shieldId = JSON.parse(shieldResult.content[0].text).id;
+        const shield = JSON.parse(shieldResult.content[0].text);
+        expect(shield.name).toBe('Wooden Shield');
+        expect(shield.id).toBeDefined();
     });
 
     it('should give items to character', async () => {
-        // Create character first
-        const charResult = await handleCreateCharacter({
-            name: 'Inventory Tester',
-            hp: 10,
-            maxHp: 10,
-            ac: 10,
-            level: 1,
-            stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
-        }, mockCtx);
-        characterId = JSON.parse(charResult.content[0].text).id;
+        // Create character and item fresh for this test
+        const characterId = await createTestCharacter();
+        const swordId = await createTestItem('Iron Sword', 'weapon', { damage: '1d8' });
 
         // Give sword
         await handleGiveItem({
@@ -75,6 +91,17 @@ describe('Inventory System', () => {
     });
 
     it('should equip and unequip items', async () => {
+        // Create character and item fresh for this test
+        const characterId = await createTestCharacter();
+        const swordId = await createTestItem('Iron Sword', 'weapon', { damage: '1d8' });
+
+        // Give sword first
+        await handleGiveItem({
+            characterId,
+            itemId: swordId,
+            quantity: 1
+        }, mockCtx);
+
         // Equip sword
         await handleEquipItem({
             characterId,
@@ -100,6 +127,18 @@ describe('Inventory System', () => {
     });
 
     it('should remove items', async () => {
+        // Create character and item fresh for this test
+        const characterId = await createTestCharacter();
+        const swordId = await createTestItem('Iron Sword', 'weapon', { damage: '1d8' });
+
+        // Give sword first
+        await handleGiveItem({
+            characterId,
+            itemId: swordId,
+            quantity: 1
+        }, mockCtx);
+
+        // Now remove it
         await handleRemoveItem({
             characterId,
             itemId: swordId,
@@ -112,7 +151,10 @@ describe('Inventory System', () => {
     });
 
     it('should handle stacking items', async () => {
-        // Give 5 potions
+        // Create character fresh for this test
+        const characterId = await createTestCharacter();
+
+        // Create potions
         const potionResult = await handleCreateItemTemplate({
             name: 'Health Potion',
             type: 'consumable',
@@ -121,6 +163,7 @@ describe('Inventory System', () => {
         }, mockCtx);
         const potionId = JSON.parse(potionResult.content[0].text).id;
 
+        // Give 5 potions
         await handleGiveItem({ characterId, itemId: potionId, quantity: 5 }, mockCtx);
 
         // Give 3 more
