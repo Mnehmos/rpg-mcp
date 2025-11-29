@@ -258,6 +258,18 @@ type ActionType =
   | 'WAIT'           // Pass turn / hold action
 ```
 
+### Math Engine Tools
+
+| Tool | Description |
+|------|-------------|
+| `dice_roll(expression, seed?, exportFormat?)` | Roll dice with standard notation (2d6+3), supports advantage/disadvantage |
+| `probability_calculate(expression, target, comparison)` | Calculate probabilities and expected values for dice rolls |
+| `algebra_solve(equation, variable?, exportFormat?)` | Solve algebraic equations symbolically |
+| `algebra_simplify(expression, exportFormat?)` | Simplify algebraic expressions |
+| `physics_projectile(velocity, angle, height?, gravity?)` | Calculate projectile motion trajectories |
+
+**Export Formats**: `latex`, `mathml`, `plaintext`, `steps`
+
 ---
 
 ## Use Cases
