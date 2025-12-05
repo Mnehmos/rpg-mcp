@@ -213,7 +213,7 @@ export class NpcMemoryRepository {
             params.push(minLevel);
         }
 
-        query += ` ORDER BY created_at DESC`;
+        query += ` ORDER BY id DESC`;
 
         if (options?.limit) {
             query += ` LIMIT ?`;
@@ -232,7 +232,7 @@ export class NpcMemoryRepository {
         const stmt = this.db.prepare(`
             SELECT * FROM conversation_memories
             WHERE character_id = ?
-            ORDER BY created_at DESC
+            ORDER BY id DESC
             LIMIT ?
         `);
         const rows = stmt.all(characterId, limit) as MemoryRow[];
@@ -248,7 +248,7 @@ export class NpcMemoryRepository {
             SELECT * FROM conversation_memories
             WHERE character_id = ?
             AND topics LIKE ?
-            ORDER BY created_at DESC
+            ORDER BY id DESC
         `);
         const rows = stmt.all(characterId, `%"${topic}"%`) as MemoryRow[];
         return rows.map(row => this.rowToMemory(row));
