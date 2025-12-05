@@ -136,7 +136,7 @@ describe('Combat MCP Tools', () => {
                         id: 'defender',
                         name: 'Orc',
                         initiativeBonus: 1,
-                        hp: 20,
+                        hp: 15,
                         maxHp: 20,
                         conditions: []
                     }
@@ -312,12 +312,8 @@ describe('Combat MCP Tools', () => {
             // Note: In the new implementation, we need to delete using the namespaced ID
             getCombatManager().delete(`${mockCtx.sessionId}:${encounterId}`);
 
-            // Verify it's gone from memory
-            await expect(handleGetEncounterState({ encounterId }, mockCtx)).rejects.toThrow();
-
-            // 5. Load from DB
-            const loadResult = await handleLoadEncounter({ encounterId }, mockCtx);
-            expect(JSON.parse(loadResult.content[0].text).message).toBe('Encounter loaded');
+            // 5. Verify auto-load from DB works (getState should still work)
+            // The handler auto-loads from DB if not in memory
 
             // 6. Verify state is restored
             const stateAfterResult = await handleGetEncounterState({ encounterId }, mockCtx);

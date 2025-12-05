@@ -81,7 +81,7 @@ describe('Grand Strategy Integration', () => {
 
         // 5. Verify World State (Fog of War)
         // Nation 1 viewing
-        const view1Res = await handleStrategyTool(StrategyTools.GET_WORLD_STATE.name, {
+        const view1Res = await handleStrategyTool(StrategyTools.GET_STRATEGY_STATE.name, {
             worldId: 'world-1',
             viewerNationId: nation1.id
         });

@@ -317,22 +317,14 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
         updatedAt: new Date().toISOString()
     });
 
-    // Build response with BOTH text and JSON
+    // Build response as JSON for machine consumption
     const stateJson = buildStateJson(state, encounterId);
-    const formattedText = formatCombatStateText(state);
-    
-    let output = `⚔️ COMBAT STARTED\n`;
-    output += `Encounter ID: ${encounterId}\n`;
-    output += formattedText;
-    
-    // Append JSON for frontend parsing (marked clearly)
-    output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
 
     return {
         content: [
             {
                 type: 'text' as const,
-                text: output
+                text: JSON.stringify(stateJson)
             }
         ]
     };
@@ -363,12 +355,16 @@ export async function handleGetEncounterState(args: unknown, ctx: SessionContext
         throw new Error('No active encounter');
     }
 
-    // CRITICAL FIX: Return JSON for frontend sync, wrapped in content
-    // The frontend expects to parse this as JSON
     const stateJson = buildStateJson(state, parsed.encounterId);
-    
-    // Return the JSON directly - the server will stringify it
-    return stateJson;
+
+    return {
+        content: [
+            {
+                type: 'text' as const,
+                text: JSON.stringify(stateJson)
+            }
+        ]
+    };
 }
 
 export async function handleExecuteCombatAction(args: unknown, ctx: SessionContext) {
@@ -391,7 +387,6 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
     }
 
     let result: CombatActionResult;
-    let output = '';
 
     if (parsed.action === 'attack') {
         if (parsed.attackBonus === undefined || parsed.dc === undefined || parsed.damage === undefined) {
@@ -406,16 +401,12 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             parsed.dc,
             parsed.damage
         );
-
-        output = formatAttackResult(result);
-        
     } else if (parsed.action === 'heal') {
         if (parsed.amount === undefined) {
             throw new Error('Heal action requires amount');
         }
 
         result = engine.executeHeal(parsed.actorId, parsed.targetId, parsed.amount);
-        output = formatHealResult(result);
     } else {
         throw new Error(`Unknown action: ${parsed.action}`);
     }
@@ -426,17 +417,25 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
         const repo = new EncounterRepository(db);
         repo.saveState(parsed.encounterId, state);
-        
-        // Append current state JSON for frontend
-        const stateJson = buildStateJson(state, parsed.encounterId);
-        output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
     }
+
+    // Build JSON response with fields tests expect
+    const responseJson = {
+        action: parsed.action,
+        success: result.success,
+        damageDealt: result.damage ?? 0,
+        amountHealed: result.healAmount ?? 0,
+        defeated: result.defeated,
+        actor: result.actor,
+        target: result.target,
+        message: result.message
+    };
 
     return {
         content: [
             {
                 type: 'text' as const,
-                text: output
+                text: JSON.stringify(responseJson)
             }
         ]
     };
@@ -472,20 +471,24 @@ export async function handleAdvanceTurn(args: unknown, ctx: SessionContext) {
         repo.saveState(parsed.encounterId, state);
     }
 
-    let output = `\n⏭️ TURN ENDED: ${previousParticipant?.name}\n`;
-    output += state ? formatCombatStateText(state) : 'No combat state';
-    
-    // Append JSON for frontend
-    if (state) {
-        const stateJson = buildStateJson(state, parsed.encounterId);
-        output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
-    }
+    const currentParticipant = engine.getCurrentParticipant();
+    const responseJson = {
+        previousTurn: previousParticipant ? {
+            id: previousParticipant.id,
+            name: previousParticipant.name
+        } : null,
+        currentTurn: currentParticipant ? {
+            id: currentParticipant.id,
+            name: currentParticipant.name
+        } : null,
+        round: state?.round ?? 1
+    };
 
     return {
         content: [
             {
                 type: 'text' as const,
-                text: output
+                text: JSON.stringify(responseJson)
             }
         ]
     };
@@ -493,9 +496,14 @@ export async function handleAdvanceTurn(args: unknown, ctx: SessionContext) {
 
 export async function handleEndEncounter(args: unknown, ctx: SessionContext) {
     const parsed = CombatTools.END_ENCOUNTER.inputSchema.parse(args);
-    const success = getCombatManager().delete(`${ctx.sessionId}:${parsed.encounterId}`);
+    const memoryDeleted = getCombatManager().delete(`${ctx.sessionId}:${parsed.encounterId}`);
 
-    if (!success) {
+    // Also delete from database
+    const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+    const repo = new EncounterRepository(db);
+    const dbDeleted = repo.delete(parsed.encounterId);
+
+    if (!memoryDeleted && !dbDeleted) {
         throw new Error(`Encounter ${parsed.encounterId} not found.`);
     }
 
@@ -503,7 +511,7 @@ export async function handleEndEncounter(args: unknown, ctx: SessionContext) {
         content: [
             {
                 type: 'text' as const,
-                text: `\n🏁 COMBAT ENDED\nEncounter ID: ${parsed.encounterId}\n\nAll combatants have been removed from the battlefield.`
+                text: JSON.stringify({ message: 'Encounter ended', encounterId: parsed.encounterId })
             }
         ]
     };
@@ -525,15 +533,10 @@ export async function handleLoadEncounter(args: unknown, ctx: SessionContext) {
 
     getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
 
-    const stateJson = buildStateJson(state, parsed.encounterId);
-    let output = `📥 ENCOUNTER LOADED\nEncounter ID: ${parsed.encounterId}\n`;
-    output += formatCombatStateText(state);
-    output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
-
     return {
         content: [{
             type: 'text' as const,
-            text: output
+            text: JSON.stringify({ message: 'Encounter loaded', encounterId: parsed.encounterId })
         }]
     };
 }

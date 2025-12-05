@@ -36,6 +36,7 @@ describe('WorldRepository', () => {
             seed: 'seed-123',
             width: 100,
             height: 100,
+            environment: {},
             createdAt: FIXED_TIMESTAMP,
             updatedAt: FIXED_TIMESTAMP,
         };
@@ -58,6 +59,7 @@ describe('WorldRepository', () => {
             seed: 'seed-1',
             width: 100,
             height: 100,
+            environment: {},
             createdAt: FIXED_TIMESTAMP,
             updatedAt: FIXED_TIMESTAMP,
         };
@@ -67,6 +69,7 @@ describe('WorldRepository', () => {
             seed: 'seed-2',
             width: 200,
             height: 200,
+            environment: {},
             createdAt: FIXED_TIMESTAMP,
             updatedAt: FIXED_TIMESTAMP,
         };

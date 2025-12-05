@@ -16,8 +16,9 @@ describe('Registered Tools Verification', () => {
 
             expect(result.content).toBeDefined();
             const content = JSON.parse(result.content[0].text);
-            expect(content.message).toBe('Combat encounter started');
             expect(content.encounterId).toBeDefined();
+            expect(content.round).toBe(1);
+            expect(content.participants).toBeDefined();
         });
     });
 

@@ -78,6 +78,12 @@ export class EncounterRepository {
         const stmt = this.db.prepare('SELECT * FROM encounters WHERE id = ?');
         return stmt.get(id) as EncounterRow | undefined;
     }
+
+    delete(id: string): boolean {
+        const stmt = this.db.prepare('DELETE FROM encounters WHERE id = ?');
+        const result = stmt.run(id);
+        return result.changes > 0;
+    }
 }
 
 interface EncounterRow {

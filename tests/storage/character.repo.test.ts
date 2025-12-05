@@ -38,6 +38,7 @@ describe('CharacterRepository', () => {
             maxHp: 20,
             ac: 15,
             level: 1,
+            characterType: 'pc',
             createdAt: FIXED_TIMESTAMP,
             updatedAt: FIXED_TIMESTAMP,
         };
@@ -57,6 +58,7 @@ describe('CharacterRepository', () => {
             maxHp: 15,
             ac: 16,
             level: 2,
+            characterType: 'pc',
             factionId: 'guards',
             behavior: 'aggressive',
             createdAt: FIXED_TIMESTAMP,

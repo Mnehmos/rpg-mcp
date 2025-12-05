@@ -86,7 +86,9 @@ describe('Quest System', () => {
         // Verify Log
         let logResult = await handleGetQuestLog({ characterId }, { sessionId: 'test' });
         let log = JSON.parse(logResult.content[0].text);
-        expect(log.activeQuests).toContain(quest.id);
+        // Check if quest is in the quests array with active status
+        const activeQuest = log.quests.find((q: any) => q.id === quest.id && q.status === 'active');
+        expect(activeQuest).toBeDefined();
 
         // 3. Update Objective
         await handleUpdateObjective({
@@ -113,8 +115,11 @@ describe('Quest System', () => {
         // Verify Log
         logResult = await handleGetQuestLog({ characterId }, { sessionId: 'test' });
         log = JSON.parse(logResult.content[0].text);
-        expect(log.activeQuests).not.toContain(quest.id);
-        expect(log.completedQuests).toContain(quest.id);
+        // Quest should now be completed, not active
+        const stillActive = log.quests.find((q: any) => q.id === quest.id && q.status === 'active');
+        const completed = log.quests.find((q: any) => q.id === quest.id && q.status === 'completed');
+        expect(stillActive).toBeUndefined();
+        expect(completed).toBeDefined();
 
         // Verify Reward (Item)
         const invResult = await handleGetInventory({ characterId }, { sessionId: 'test' });

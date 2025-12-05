@@ -192,6 +192,67 @@ export function migrate(db: Database.Database) {
     FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS nations(
+    id TEXT PRIMARY KEY,
+    world_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    leader TEXT NOT NULL,
+    ideology TEXT NOT NULL,
+    aggression INTEGER NOT NULL DEFAULT 50,
+    trust INTEGER NOT NULL DEFAULT 50,
+    paranoia INTEGER NOT NULL DEFAULT 50,
+    gdp REAL NOT NULL DEFAULT 1000,
+    resources TEXT NOT NULL DEFAULT '{"food":0,"metal":0,"oil":0}', --JSON
+    relations TEXT NOT NULL DEFAULT '{}', --JSON
+    private_memory TEXT, --JSON
+    public_intent TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_nations_world ON nations(world_id);
+
+  CREATE TABLE IF NOT EXISTS diplomatic_relations(
+    from_nation_id TEXT NOT NULL,
+    to_nation_id TEXT NOT NULL,
+    opinion INTEGER NOT NULL DEFAULT 0,
+    is_allied INTEGER NOT NULL DEFAULT 0,
+    truce_until INTEGER,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(from_nation_id, to_nation_id),
+    FOREIGN KEY(from_nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+    FOREIGN KEY(to_nation_id) REFERENCES nations(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS territorial_claims(
+    id TEXT PRIMARY KEY,
+    nation_id TEXT NOT NULL,
+    region_id TEXT NOT NULL,
+    claim_strength INTEGER NOT NULL DEFAULT 50,
+    justification TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+    FOREIGN KEY(region_id) REFERENCES regions(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_territorial_claims_nation ON territorial_claims(nation_id);
+  CREATE INDEX IF NOT EXISTS idx_territorial_claims_region ON territorial_claims(region_id);
+
+  CREATE TABLE IF NOT EXISTS nation_events(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_id TEXT NOT NULL,
+    turn_number INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    involved_nations TEXT NOT NULL, --JSON array
+    details TEXT NOT NULL, --JSON
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_nation_events_world ON nation_events(world_id);
+  CREATE INDEX IF NOT EXISTS idx_nation_events_turn ON nation_events(world_id, turn_number);
+
   CREATE TABLE IF NOT EXISTS secrets(
     id TEXT PRIMARY KEY,
     world_id TEXT NOT NULL,
@@ -268,10 +329,25 @@ function runMigrations(db: Database.Database) {
   // Check if character_type column exists and add it if missing
   const charColumns = db.prepare("PRAGMA table_info(characters)").all() as { name: string }[];
   const hasCharacterType = charColumns.some(col => col.name === 'character_type');
-  
+
   if (!hasCharacterType) {
     console.error('[Migration] Adding character_type column to characters table');
     db.exec(`ALTER TABLE characters ADD COLUMN character_type TEXT DEFAULT 'pc';`);
+  }
+
+  // Check if regions table has owner_nation_id and control_level columns
+  const regionColumns = db.prepare("PRAGMA table_info(regions)").all() as { name: string }[];
+  const hasOwnerNationId = regionColumns.some(col => col.name === 'owner_nation_id');
+  const hasControlLevel = regionColumns.some(col => col.name === 'control_level');
+
+  if (!hasOwnerNationId) {
+    console.error('[Migration] Adding owner_nation_id column to regions table');
+    db.exec(`ALTER TABLE regions ADD COLUMN owner_nation_id TEXT REFERENCES nations(id) ON DELETE SET NULL;`);
+  }
+
+  if (!hasControlLevel) {
+    console.error('[Migration] Adding control_level column to regions table');
+    db.exec(`ALTER TABLE regions ADD COLUMN control_level INTEGER NOT NULL DEFAULT 0;`);
   }
 
   // Check if party position columns exist and add them if missing
@@ -318,5 +394,12 @@ function createPostMigrationIndexes(db: Database.Database) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_parties_position ON parties(position_x, position_y);`);
   } catch (e) {
     console.error('[Migration] Note: Could not create idx_parties_position:', (e as Error).message);
+  }
+
+  // Create regions owner_nation_id index (depends on column added by migration)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_regions_owner_nation ON regions(owner_nation_id);`);
+  } catch (e) {
+    console.error('[Migration] Note: Could not create idx_regions_owner_nation:', (e as Error).message);
   }
 }

@@ -106,7 +106,7 @@ describe('Patch Engine', () => {
         expect(world.structures[0].location).toEqual({ x: 8, y: 8 });
     });
 
-    it('should throw error when moving non-existent structure', () => {
+    it('should return error when moving non-existent structure', () => {
         const command = {
             command: CommandType.MOVE_STRUCTURE,
             args: {
@@ -116,7 +116,10 @@ describe('Patch Engine', () => {
             }
         } as const;
 
-        expect(() => applyPatch(world, [command])).toThrow('Structure not found: Ghost Town');
+        const result = applyPatch(world, [command]);
+        expect(result.success).toBe(false);
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0].message).toBe('Structure not found: Ghost Town');
     });
 
     it('should ignore out-of-bounds coordinates for tile edits', () => {
