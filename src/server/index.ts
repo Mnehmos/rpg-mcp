@@ -12,6 +12,7 @@ import { TurnManagementTools, handleTurnManagementTool } from './turn-management
 import { SecretTools, handleCreateSecret, handleGetSecret, handleListSecrets, handleUpdateSecret, handleDeleteSecret, handleRevealSecret, handleCheckRevealConditions, handleGetSecretsForContext, handleCheckForLeaks } from './secret-tools.js';
 import { PartyTools, handleCreateParty, handleGetParty, handleListParties, handleUpdateParty, handleDeleteParty, handleAddPartyMember, handleRemovePartyMember, handleUpdatePartyMember, handleSetPartyLeader, handleSetActiveCharacter, handleGetPartyMembers, handleGetPartyContext, handleGetUnassignedCharacters, handleMoveParty, handleGetPartyPosition, handleGetPartiesInRegion } from './party-tools.js';
 import { RestTools, handleTakeLongRest, handleTakeShortRest } from './rest-tools.js';
+import { NpcMemoryTools, handleGetNpcRelationship, handleUpdateNpcRelationship, handleRecordConversationMemory, handleGetConversationHistory, handleGetRecentInteractions, handleGetNpcContext } from './npc-memory-tools.js';
 import { PubSub } from '../engine/pubsub.js';
 import { registerEventTools } from './events.js';
 import { AuditLogger } from './audit.js';
@@ -736,6 +737,49 @@ async function main() {
         RestTools.TAKE_SHORT_REST.description,
         RestTools.TAKE_SHORT_REST.inputSchema.extend({ sessionId: z.string().optional() }).shape,
         auditLogger.wrapHandler(RestTools.TAKE_SHORT_REST.name, withSession(RestTools.TAKE_SHORT_REST.inputSchema, handleTakeShortRest))
+    );
+
+    // Register NPC Memory Tools (HIGH-004: NPC Relationship & Memory System)
+    server.tool(
+        NpcMemoryTools.GET_NPC_RELATIONSHIP.name,
+        NpcMemoryTools.GET_NPC_RELATIONSHIP.description,
+        NpcMemoryTools.GET_NPC_RELATIONSHIP.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.GET_NPC_RELATIONSHIP.name, withSession(NpcMemoryTools.GET_NPC_RELATIONSHIP.inputSchema, handleGetNpcRelationship))
+    );
+
+    server.tool(
+        NpcMemoryTools.UPDATE_NPC_RELATIONSHIP.name,
+        NpcMemoryTools.UPDATE_NPC_RELATIONSHIP.description,
+        NpcMemoryTools.UPDATE_NPC_RELATIONSHIP.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.UPDATE_NPC_RELATIONSHIP.name, withSession(NpcMemoryTools.UPDATE_NPC_RELATIONSHIP.inputSchema, handleUpdateNpcRelationship))
+    );
+
+    server.tool(
+        NpcMemoryTools.RECORD_CONVERSATION_MEMORY.name,
+        NpcMemoryTools.RECORD_CONVERSATION_MEMORY.description,
+        NpcMemoryTools.RECORD_CONVERSATION_MEMORY.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.RECORD_CONVERSATION_MEMORY.name, withSession(NpcMemoryTools.RECORD_CONVERSATION_MEMORY.inputSchema, handleRecordConversationMemory))
+    );
+
+    server.tool(
+        NpcMemoryTools.GET_CONVERSATION_HISTORY.name,
+        NpcMemoryTools.GET_CONVERSATION_HISTORY.description,
+        NpcMemoryTools.GET_CONVERSATION_HISTORY.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.GET_CONVERSATION_HISTORY.name, withSession(NpcMemoryTools.GET_CONVERSATION_HISTORY.inputSchema, handleGetConversationHistory))
+    );
+
+    server.tool(
+        NpcMemoryTools.GET_RECENT_INTERACTIONS.name,
+        NpcMemoryTools.GET_RECENT_INTERACTIONS.description,
+        NpcMemoryTools.GET_RECENT_INTERACTIONS.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.GET_RECENT_INTERACTIONS.name, withSession(NpcMemoryTools.GET_RECENT_INTERACTIONS.inputSchema, handleGetRecentInteractions))
+    );
+
+    server.tool(
+        NpcMemoryTools.GET_NPC_CONTEXT.name,
+        NpcMemoryTools.GET_NPC_CONTEXT.description,
+        NpcMemoryTools.GET_NPC_CONTEXT.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.GET_NPC_CONTEXT.name, withSession(NpcMemoryTools.GET_NPC_CONTEXT.inputSchema, handleGetNpcContext))
     );
 
     // Connect transport
