@@ -99,7 +99,7 @@ export function generateLakes(options: LakeGenerationOptions): LakeResult {
   // Find depression seeds - river tiles that are local minima
   const depressionSeeds = findDepressionSeeds(elevation, rivers, seaLevel, width, height);
   
-  console.log(`Found ${depressionSeeds.length} potential depression seeds`);
+  console.error(`Found ${depressionSeeds.length} potential depression seeds`);
 
   let lakeCount = 0;
 
@@ -179,7 +179,7 @@ export function generateLakes(options: LakeGenerationOptions): LakeResult {
         }
       }
 
-      console.log(`Created lake #${lakeCount}: ${lakeTiles.length} tiles, depth=${depth}, level=${lakeLevel}`);
+      console.error(`Created lake #${lakeCount}: ${lakeTiles.length} tiles, depth=${depth}, level=${lakeLevel}`);
     } else {
       // Mark basin as processed even if no lake formed
       for (const idx of basinTiles) {
@@ -187,7 +187,7 @@ export function generateLakes(options: LakeGenerationOptions): LakeResult {
       }
       
       if (lakeTiles.length > maxLakeSize) {
-        console.log(`Rejected lake: too large (${lakeTiles.length} tiles)`);
+        console.error(`Rejected lake: too large (${lakeTiles.length} tiles)`);
       }
     }
   }

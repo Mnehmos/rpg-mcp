@@ -253,7 +253,7 @@ export function migrate(db: Database.Database) {
   CREATE INDEX IF NOT EXISTS idx_party_members_character ON party_members(character_id);
   CREATE INDEX IF NOT EXISTS idx_parties_status ON parties(status);
   CREATE INDEX IF NOT EXISTS idx_parties_world ON parties(world_id);
-  CREATE INDEX IF NOT EXISTS idx_parties_position ON parties(position_x, position_y);
+  -- idx_parties_position moved to createPostMigrationIndexes (depends on position_x column)
   `);
 
   // Run migrations for existing databases that don't have the new columns
@@ -281,17 +281,17 @@ function runMigrations(db: Database.Database) {
   const hasCurrentPOI = partyColumns.some(col => col.name === 'current_poi');
   
   if (!hasPositionX) {
-    console.log('[Migration] Adding position_x column to parties table');
+    console.error('[Migration] Adding position_x column to parties table');
     db.exec(`ALTER TABLE parties ADD COLUMN position_x INTEGER;`);
   }
   
   if (!hasPositionY) {
-    console.log('[Migration] Adding position_y column to parties table');
+    console.error('[Migration] Adding position_y column to parties table');
     db.exec(`ALTER TABLE parties ADD COLUMN position_y INTEGER;`);
   }
   
   if (!hasCurrentPOI) {
-    console.log('[Migration] Adding current_poi column to parties table');
+    console.error('[Migration] Adding current_poi column to parties table');
     db.exec(`ALTER TABLE parties ADD COLUMN current_poi TEXT;`);
   }
 
@@ -311,5 +311,12 @@ function createPostMigrationIndexes(db: Database.Database) {
   } catch (e) {
     // Index may already exist or column may not exist in very old DBs
     console.error('[Migration] Note: Could not create idx_characters_type:', (e as Error).message);
+  }
+  
+  // Create parties position index (depends on position_x, position_y columns added by migration)
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_parties_position ON parties(position_x, position_y);`);
+  } catch (e) {
+    console.error('[Migration] Note: Could not create idx_parties_position:', (e as Error).message);
   }
 }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CombatEngine, CombatParticipant, CombatState, CombatActionResult } from '../engine/combat/engine.js';
+import { CombatEngine, CombatParticipant } from '../engine/combat/engine.js';
 
 import { PubSub } from '../engine/pubsub.js';
 
@@ -15,160 +15,11 @@ export function setCombatPubSub(instance: PubSub) {
     pubsub = instance;
 }
 
-// ============================================================
-// FORMATTING - Both human-readable AND machine-readable
-// ============================================================
-
-/**
- * Build a machine-readable state object for frontend sync
- */
-function buildStateJson(state: CombatState, encounterId: string) {
-    const currentParticipant = state.participants.find(
-        (p) => p.id === state.turnOrder[state.currentTurnIndex]
-    );
-
-    return {
-        encounterId,
-        round: state.round,
-        currentTurnIndex: state.currentTurnIndex,
-        currentTurn: currentParticipant ? {
-            id: currentParticipant.id,
-            name: currentParticipant.name,
-            isEnemy: currentParticipant.isEnemy
-        } : null,
-        turnOrder: state.turnOrder.map(id => {
-            const p = state.participants.find(part => part.id === id);
-            return p?.name || id;
-        }),
-        participants: state.participants.map(p => ({
-            id: p.id,
-            name: p.name,
-            hp: p.hp,
-            maxHp: p.maxHp,
-            initiative: p.initiative,
-            isEnemy: p.isEnemy,
-            conditions: p.conditions.map(c => c.type),
-            isDefeated: p.hp <= 0,
-            isCurrentTurn: p.id === currentParticipant?.id
-        }))
-    };
-}
-
-/**
- * Format combat state for human reading in chat
- */
-function formatCombatStateText(state: CombatState): string {
-    const currentParticipant = state.participants.find(
-        (p) => p.id === state.turnOrder[state.currentTurnIndex]
-    );
-
-    const isEnemy = currentParticipant?.isEnemy ?? false;
-
-    // Header with round info
-    const turnIcon = isEnemy ? '👹' : '⚔️';
-    let output = `\n┌─────────────────────────────────────────┐\n`;
-    output += `│ ${turnIcon} ROUND ${state.round} — ${currentParticipant?.name}'s Turn\n`;
-    output += `└─────────────────────────────────────────┘\n\n`;
-
-    // Initiative order with clear formatting
-    output += `📋 INITIATIVE ORDER\n`;
-    output += `───────────────────────────────────────────\n`;
-    
-    state.turnOrder.forEach((id: string, index: number) => {
-        const p = state.participants.find((part) => part.id === id);
-        if (!p) return;
-
-        const isCurrent = index === state.currentTurnIndex;
-        const icon = p.isEnemy ? '👹' : '🧙';
-        const hpPct = p.maxHp > 0 ? (p.hp / p.maxHp) * 100 : 0;
-        const hpBar = createHpBar(hpPct);
-        const marker = isCurrent ? '▶' : ' ';
-        const status = p.hp <= 0 ? '💀 DEFEATED' : '';
-        
-        output += `${marker} ${icon} ${p.name.padEnd(18)} ${hpBar} ${p.hp}/${p.maxHp} HP  [Init: ${p.initiative}] ${status}\n`;
-    });
-    
-    output += `\n`;
-
-    // Find valid targets for guidance
-    const validPlayerTargets = state.participants
-        .filter(p => !p.isEnemy && p.hp > 0)
-        .map(p => `${p.name} (${p.id})`);
-    
-    const validEnemyTargets = state.participants
-        .filter(p => p.isEnemy && p.hp > 0)
-        .map(p => `${p.name} (${p.id})`);
-
-    // Action guidance
-    if (isEnemy && currentParticipant && currentParticipant.hp > 0) {
-        output += `⚡ ENEMY TURN\n`;
-        output += `   Available targets: ${validPlayerTargets.join(', ') || 'None'}\n`;
-        output += `   → Execute attack, then call advance_turn\n`;
-    } else if (currentParticipant && currentParticipant.hp > 0) {
-        output += `🎮 PLAYER TURN\n`;
-        output += `   Available targets: ${validEnemyTargets.join(', ') || 'None'}\n`;
-        output += `   → Awaiting player action\n`;
-    } else {
-        output += `⏭️ Current combatant is defeated — call advance_turn\n`;
-    }
-
-    return output;
-}
-
-/**
- * Create a visual HP bar
- */
-function createHpBar(percentage: number): string {
-    const filled = Math.round(percentage / 10);
-    const empty = 10 - filled;
-    
-    // Simple ASCII bar for cleaner output
-    const bar = '█'.repeat(filled) + '░'.repeat(empty);
-    return `[${bar}]`;
-}
-
-/**
- * Format an attack result for display
- */
-function formatAttackResult(result: CombatActionResult): string {
-    let output = `\n┌─────────────────────────────────────────┐\n`;
-    output += `│ ⚔️  ATTACK ACTION\n`;
-    output += `└─────────────────────────────────────────┘\n\n`;
-    
-    output += `${result.actor.name} attacks ${result.target.name}!\n\n`;
-    output += result.detailedBreakdown;
-    
-    if (result.defeated) {
-        output += `\n\n💀 ${result.target.name} has been defeated!`;
-    }
-    
-    output += `\n\n→ Call advance_turn to proceed`;
-    
-    return output;
-}
-
-/**
- * Format a heal result for display
- */
-function formatHealResult(result: CombatActionResult): string {
-    let output = `\n┌─────────────────────────────────────────┐\n`;
-    output += `│ 💚 HEAL ACTION\n`;
-    output += `└─────────────────────────────────────────┘\n\n`;
-    
-    output += `${result.actor.name} heals ${result.target.name}!\n\n`;
-    output += result.detailedBreakdown;
-    output += `\n\n→ Call advance_turn to proceed`;
-    
-    return output;
-}
-
 // Tool definitions
 export const CombatTools = {
     CREATE_ENCOUNTER: {
         name: 'create_encounter',
         description: `Create a new combat encounter with the specified participants.
-Initiative is rolled automatically (1d20 + initiativeBonus).
-Enemy detection is automatic based on ID/name patterns, but you can override with isEnemy.
 
 Example:
 {
@@ -179,16 +30,14 @@ Example:
       "name": "Valeros",
       "initiativeBonus": 2,
       "hp": 20,
-      "maxHp": 20,
-      "isEnemy": false
+      "maxHp": 20
     },
     {
       "id": "goblin-1",
       "name": "Goblin",
       "initiativeBonus": 1,
       "hp": 7,
-      "maxHp": 7,
-      "isEnemy": true
+      "maxHp": 7
     }
   ]
 }`,
@@ -200,7 +49,6 @@ Example:
                 initiativeBonus: z.number().int(),
                 hp: z.number().int().positive(),
                 maxHp: z.number().int().positive(),
-                isEnemy: z.boolean().optional().describe('Whether this is an enemy (auto-detected if not set)'),
                 conditions: z.array(z.any()).default([])
             })).min(1)
         })
@@ -268,19 +116,16 @@ Examples:
 
 // Tool handlers
 export async function handleCreateEncounter(args: unknown, ctx: SessionContext) {
+    // No need to check for existing encounter globally anymore
+
     const parsed = CombatTools.CREATE_ENCOUNTER.inputSchema.parse(args);
 
     // Create combat engine
     const engine = new CombatEngine(parsed.seed, pubsub || undefined);
 
-    // Convert participants to proper format (preserve isEnemy if provided)
+    // Convert participants to proper format
     const participants: CombatParticipant[] = parsed.participants.map(p => ({
-        id: p.id,
-        name: p.name,
-        initiativeBonus: p.initiativeBonus,
-        hp: p.hp,
-        maxHp: p.maxHp,
-        isEnemy: p.isEnemy,  // Will be auto-detected in startEncounter if undefined
+        ...p,
         conditions: []
     }));
 
@@ -296,15 +141,14 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
     const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
     const repo = new EncounterRepository(db);
 
-    // Create the encounter record first (with initiative and isEnemy)
+    // Create the encounter record first
     repo.create({
         id: encounterId,
+        // regionId is optional
         tokens: state.participants.map(p => ({
             id: p.id,
             name: p.name,
             initiativeBonus: p.initiativeBonus,
-            initiative: p.initiative,    // Store rolled initiative
-            isEnemy: p.isEnemy,          // Store enemy flag
             hp: p.hp,
             maxHp: p.maxHp,
             conditions: p.conditions,
@@ -317,22 +161,19 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
         updatedAt: new Date().toISOString()
     });
 
-    // Build response with BOTH text and JSON
-    const stateJson = buildStateJson(state, encounterId);
-    const formattedText = formatCombatStateText(state);
-    
-    let output = `⚔️ COMBAT STARTED\n`;
-    output += `Encounter ID: ${encounterId}\n`;
-    output += formattedText;
-    
-    // Append JSON for frontend parsing (marked clearly)
-    output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
+    const currentParticipant = engine.getCurrentParticipant();
 
     return {
         content: [
             {
                 type: 'text' as const,
-                text: output
+                text: JSON.stringify({
+                    encounterId,
+                    message: 'Combat encounter started',
+                    turnOrder: state.turnOrder,
+                    round: state.round,
+                    currentTurn: currentParticipant?.name || null
+                }, null, 2)
             }
         ]
     };
@@ -363,12 +204,31 @@ export async function handleGetEncounterState(args: unknown, ctx: SessionContext
         throw new Error('No active encounter');
     }
 
-    // CRITICAL FIX: Return JSON for frontend sync, wrapped in content
-    // The frontend expects to parse this as JSON
-    const stateJson = buildStateJson(state, parsed.encounterId);
-    
-    // Return the JSON directly - the server will stringify it
-    return stateJson;
+    const currentParticipant = engine.getCurrentParticipant();
+
+    return {
+        content: [
+            {
+                type: 'text' as const,
+                text: JSON.stringify({
+                    encounterId: parsed.encounterId,
+                    round: state.round,
+                    currentTurn: {
+                        participantId: currentParticipant?.id,
+                        participantName: currentParticipant?.name
+                    },
+                    participants: state.participants.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        hp: p.hp,
+                        maxHp: p.maxHp,
+                        conditions: p.conditions
+                    })),
+                    turnOrder: state.turnOrder
+                }, null, 2)
+            }
+        ]
+    };
 }
 
 export async function handleExecuteCombatAction(args: unknown, ctx: SessionContext) {
@@ -390,34 +250,37 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
     }
 
-    let result: CombatActionResult;
-    let output = '';
+    let result: any = {
+        action: parsed.action,
+        actorId: parsed.actorId,
+        targetId: parsed.targetId
+    };
 
     if (parsed.action === 'attack') {
-        if (parsed.attackBonus === undefined || parsed.dc === undefined || parsed.damage === undefined) {
-            throw new Error('Attack action requires attackBonus, dc, and damage');
+        if (parsed.attackBonus === undefined || parsed.dc === undefined) {
+            throw new Error('Attack action requires attackBonus and dc');
         }
 
-        // Use the new detailed attack method
-        result = engine.executeAttack(
-            parsed.actorId,
-            parsed.targetId,
-            parsed.attackBonus,
-            parsed.dc,
-            parsed.damage
-        );
+        // Make attack check
+        const degree = engine.makeCheck(parsed.attackBonus, parsed.dc);
+        const success = degree === 'success' || degree === 'critical-success';
 
-        output = formatAttackResult(result);
-        
+        result.success = success;
+        result.degree = degree;
+
+        if (success && parsed.damage) {
+            engine.applyDamage(parsed.targetId, parsed.damage);
+            result.damageDealt = parsed.damage;
+        } else {
+            result.damageDealt = 0;
+        }
     } else if (parsed.action === 'heal') {
         if (parsed.amount === undefined) {
             throw new Error('Heal action requires amount');
         }
 
-        result = engine.executeHeal(parsed.actorId, parsed.targetId, parsed.amount);
-        output = formatHealResult(result);
-    } else {
-        throw new Error(`Unknown action: ${parsed.action}`);
+        engine.heal(parsed.targetId, parsed.amount);
+        result.amountHealed = parsed.amount;
     }
 
     // Save state
@@ -426,17 +289,13 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
         const repo = new EncounterRepository(db);
         repo.saveState(parsed.encounterId, state);
-        
-        // Append current state JSON for frontend
-        const stateJson = buildStateJson(state, parsed.encounterId);
-        output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
     }
 
     return {
         content: [
             {
                 type: 'text' as const,
-                text: output
+                text: JSON.stringify(result, null, 2)
             }
         ]
     };
@@ -462,7 +321,7 @@ export async function handleAdvanceTurn(args: unknown, ctx: SessionContext) {
     }
 
     const previousParticipant = engine.getCurrentParticipant();
-    engine.nextTurnWithConditions();
+    const newParticipant = engine.nextTurnWithConditions();
     const state = engine.getState();
 
     // Save state
@@ -472,20 +331,15 @@ export async function handleAdvanceTurn(args: unknown, ctx: SessionContext) {
         repo.saveState(parsed.encounterId, state);
     }
 
-    let output = `\n⏭️ TURN ENDED: ${previousParticipant?.name}\n`;
-    output += state ? formatCombatStateText(state) : 'No combat state';
-    
-    // Append JSON for frontend
-    if (state) {
-        const stateJson = buildStateJson(state, parsed.encounterId);
-        output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
-    }
-
     return {
         content: [
             {
                 type: 'text' as const,
-                text: output
+                text: JSON.stringify({
+                    previousTurn: previousParticipant?.name || null,
+                    currentTurn: newParticipant?.name || null,
+                    round: state?.round || 0
+                }, null, 2)
             }
         ]
     };
@@ -503,7 +357,10 @@ export async function handleEndEncounter(args: unknown, ctx: SessionContext) {
         content: [
             {
                 type: 'text' as const,
-                text: `\n🏁 COMBAT ENDED\nEncounter ID: ${parsed.encounterId}\n\nAll combatants have been removed from the battlefield.`
+                text: JSON.stringify({
+                    message: 'Encounter ended',
+                    encounterId: parsed.encounterId
+                }, null, 2)
             }
         ]
     };
@@ -525,15 +382,14 @@ export async function handleLoadEncounter(args: unknown, ctx: SessionContext) {
 
     getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
 
-    const stateJson = buildStateJson(state, parsed.encounterId);
-    let output = `📥 ENCOUNTER LOADED\nEncounter ID: ${parsed.encounterId}\n`;
-    output += formatCombatStateText(state);
-    output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
-
     return {
         content: [{
             type: 'text' as const,
-            text: output
+            text: JSON.stringify({
+                message: 'Encounter loaded',
+                encounterId: parsed.encounterId,
+                round: state.round
+            }, null, 2)
         }]
     };
 }

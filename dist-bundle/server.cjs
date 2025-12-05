@@ -43142,7 +43142,7 @@ function generateLakes(options) {
   const spillways = [];
   const processed = new Uint8Array(size);
   const depressionSeeds = findDepressionSeeds(elevation, rivers, seaLevel, width, height);
-  console.log(`Found ${depressionSeeds.length} potential depression seeds`);
+  console.error(`Found ${depressionSeeds.length} potential depression seeds`);
   let lakeCount = 0;
   depressionSeeds.sort((a, b) => elevation[a] - elevation[b]);
   for (const seedIdx of depressionSeeds) {
@@ -43184,13 +43184,13 @@ function generateLakes(options) {
           spillways.push(spillway);
         }
       }
-      console.log(`Created lake #${lakeCount}: ${lakeTiles.length} tiles, depth=${depth}, level=${lakeLevel}`);
+      console.error(`Created lake #${lakeCount}: ${lakeTiles.length} tiles, depth=${depth}, level=${lakeLevel}`);
     } else {
       for (const idx of basinTiles) {
         processed[idx] = 1;
       }
       if (lakeTiles.length > maxLakeSize) {
-        console.log(`Rejected lake: too large (${lakeTiles.length} tiles)`);
+        console.error(`Rejected lake: too large (${lakeTiles.length} tiles)`);
       }
     }
   }
@@ -44274,6 +44274,9 @@ function migrate(db) {
     current_location TEXT,
     current_quest_id TEXT REFERENCES quests(id) ON DELETE SET NULL,
     formation TEXT NOT NULL DEFAULT 'standard',
+    position_x INTEGER,
+    position_y INTEGER,
+    current_poi TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_played_at TEXT
@@ -44296,6 +44299,7 @@ function migrate(db) {
   CREATE INDEX IF NOT EXISTS idx_party_members_character ON party_members(character_id);
   CREATE INDEX IF NOT EXISTS idx_parties_status ON parties(status);
   CREATE INDEX IF NOT EXISTS idx_parties_world ON parties(world_id);
+  -- idx_parties_position moved to createPostMigrationIndexes (depends on position_x column)
   `);
   runMigrations(db);
   createPostMigrationIndexes(db);
@@ -44307,12 +44311,38 @@ function runMigrations(db) {
     console.error("[Migration] Adding character_type column to characters table");
     db.exec(`ALTER TABLE characters ADD COLUMN character_type TEXT DEFAULT 'pc';`);
   }
+  const partyColumns = db.prepare("PRAGMA table_info(parties)").all();
+  const hasPositionX = partyColumns.some((col) => col.name === "position_x");
+  const hasPositionY = partyColumns.some((col) => col.name === "position_y");
+  const hasCurrentPOI = partyColumns.some((col) => col.name === "current_poi");
+  if (!hasPositionX) {
+    console.error("[Migration] Adding position_x column to parties table");
+    db.exec(`ALTER TABLE parties ADD COLUMN position_x INTEGER;`);
+  }
+  if (!hasPositionY) {
+    console.error("[Migration] Adding position_y column to parties table");
+    db.exec(`ALTER TABLE parties ADD COLUMN position_y INTEGER;`);
+  }
+  if (!hasCurrentPOI) {
+    console.error("[Migration] Adding current_poi column to parties table");
+    db.exec(`ALTER TABLE parties ADD COLUMN current_poi TEXT;`);
+  }
+  db.exec(`
+    UPDATE parties 
+    SET position_x = 50, position_y = 50 
+    WHERE position_x IS NULL;
+  `);
 }
 function createPostMigrationIndexes(db) {
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_characters_type ON characters(character_type);`);
   } catch (e) {
     console.error("[Migration] Note: Could not create idx_characters_type:", e.message);
+  }
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_parties_position ON parties(position_x, position_y);`);
+  } catch (e) {
+    console.error("[Migration] Note: Could not create idx_parties_position:", e.message);
   }
 }
 
@@ -44362,7 +44392,7 @@ var AuditRepository = class {
             LIMIT ?
         `);
     const rows = stmt.all(limit);
-    console.log(`AuditRepository.list found ${rows.length} rows`);
+    console.error(`AuditRepository.list found ${rows.length} rows`);
     return rows.map((row) => ({
       id: row.id,
       action: row.action,
@@ -45613,6 +45643,14 @@ var CombatRNG = class {
    * Returns: 'critical-failure' | 'failure' | 'success' | 'critical-success'
    */
   checkDegree(modifier, dc) {
+    const result = this.checkDegreeDetailed(modifier, dc);
+    return result.degree;
+  }
+  /**
+   * Detailed check result with full dice mechanics exposed
+   * This is the TRANSPARENT version - shows exactly what was rolled
+   */
+  checkDegreeDetailed(modifier, dc) {
     const roll = this.rollDie(20);
     const total = roll + modifier;
     const margin = total - dc;
@@ -45626,19 +45664,59 @@ var CombatRNG = class {
     } else {
       degree = "critical-failure";
     }
-    if (roll === 20) {
+    const isNat20 = roll === 20;
+    const isNat1 = roll === 1;
+    if (isNat20) {
       if (degree === "failure")
         degree = "success";
       else if (degree === "success")
         degree = "critical-success";
     }
-    if (roll === 1) {
+    if (isNat1) {
       if (degree === "success")
         degree = "failure";
       else if (degree === "critical-success")
         degree = "success";
     }
-    return degree;
+    return {
+      roll,
+      modifier,
+      total,
+      dc,
+      margin,
+      degree,
+      isNat20,
+      isNat1,
+      isHit: degree === "success" || degree === "critical-success",
+      isCrit: degree === "critical-success"
+    };
+  }
+  /**
+   * Roll damage dice with detailed breakdown
+   */
+  rollDamageDetailed(notation) {
+    const match = notation.match(/^(\d+)d(\d+)(([+\-])(\d+))?$/i);
+    if (!match) {
+      throw new Error(`Invalid dice notation: ${notation}`);
+    }
+    const count = parseInt(match[1], 10);
+    const sides = parseInt(match[2], 10);
+    const modifierSign = match[4] || "+";
+    const modifierValue = match[5] ? parseInt(match[5], 10) : 0;
+    const modifier = modifierSign === "-" ? -modifierValue : modifierValue;
+    const rolls = [];
+    for (let i = 0; i < count; i++) {
+      rolls.push(this.rollDie(sides));
+    }
+    const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
+    const total = diceTotal + modifier;
+    return {
+      notation,
+      rolls,
+      diceTotal,
+      modifier,
+      total
+    };
   }
 };
 
@@ -45829,19 +45907,24 @@ var CombatEngine = class {
    * Rolls initiative for all participants and establishes turn order
    */
   startEncounter(participants) {
-    const initiativeRolls = participants.map((p) => ({
-      id: p.id,
-      initiative: this.rng.d20(p.initiativeBonus)
-    }));
-    initiativeRolls.sort((a, b) => {
+    const participantsWithInitiative = participants.map((p) => {
+      const rolledInitiative = this.rng.d20(p.initiativeBonus);
+      return {
+        ...p,
+        initiative: rolledInitiative,
+        // Auto-detect isEnemy if not explicitly set
+        isEnemy: p.isEnemy ?? this.detectIsEnemy(p.id, p.name)
+      };
+    });
+    participantsWithInitiative.sort((a, b) => {
       if (b.initiative !== a.initiative) {
         return b.initiative - a.initiative;
       }
       return a.id.localeCompare(b.id);
     });
     this.state = {
-      participants: [...participants],
-      turnOrder: initiativeRolls.map((r) => r.id),
+      participants: participantsWithInitiative,
+      turnOrder: participantsWithInitiative.map((r) => r.id),
       currentTurnIndex: 0,
       round: 1
     };
@@ -45850,6 +45933,58 @@ var CombatEngine = class {
       state: this.state
     });
     return this.state;
+  }
+  /**
+   * Auto-detect if a participant is an enemy based on ID/name patterns
+   */
+  detectIsEnemy(id, name) {
+    const idLower = id.toLowerCase();
+    const nameLower = name.toLowerCase();
+    const enemyPatterns = [
+      "goblin",
+      "orc",
+      "wolf",
+      "bandit",
+      "skeleton",
+      "zombie",
+      "dragon",
+      "troll",
+      "ogre",
+      "kobold",
+      "gnoll",
+      "demon",
+      "devil",
+      "undead",
+      "enemy",
+      "monster",
+      "creature",
+      "beast",
+      "spider",
+      "rat",
+      "bat",
+      "slime",
+      "ghost",
+      "wraith"
+    ];
+    for (const pattern of enemyPatterns) {
+      if (idLower.includes(pattern) || nameLower.includes(pattern)) {
+        return true;
+      }
+    }
+    const allyPatterns = [
+      "hero",
+      "player",
+      "pc",
+      "ally",
+      "companion",
+      "npc-friendly"
+    ];
+    for (const pattern of allyPatterns) {
+      if (idLower.includes(pattern) || nameLower.includes(pattern)) {
+        return false;
+      }
+    }
+    return !idLower.startsWith("player") && !idLower.startsWith("hero");
   }
   /**
    * Get the current state
@@ -45887,10 +46022,131 @@ var CombatEngine = class {
     return this.getCurrentParticipant();
   }
   /**
+   * Execute an attack with full transparency
+   * Returns detailed breakdown of what happened
+   */
+  executeAttack(actorId, targetId, attackBonus, dc, damage) {
+    if (!this.state)
+      throw new Error("No active combat");
+    const actor = this.state.participants.find((p) => p.id === actorId);
+    const target = this.state.participants.find((p) => p.id === targetId);
+    if (!actor)
+      throw new Error(`Actor ${actorId} not found`);
+    if (!target)
+      throw new Error(`Target ${targetId} not found`);
+    const hpBefore = target.hp;
+    const attackRoll = this.rng.checkDegreeDetailed(attackBonus, dc);
+    let damageDealt = 0;
+    if (attackRoll.isHit) {
+      damageDealt = attackRoll.isCrit ? damage * 2 : damage;
+      target.hp = Math.max(0, target.hp - damageDealt);
+    }
+    const defeated = target.hp <= 0;
+    let breakdown = `\u{1F3B2} Attack Roll: d20(${attackRoll.roll}) + ${attackBonus} = ${attackRoll.total} vs AC ${dc}
+`;
+    if (attackRoll.isNat20) {
+      breakdown += `   \u2B50 NATURAL 20!
+`;
+    } else if (attackRoll.isNat1) {
+      breakdown += `   \u{1F480} NATURAL 1!
+`;
+    }
+    breakdown += `   ${attackRoll.isHit ? "\u2705 HIT" : "\u274C MISS"}`;
+    if (attackRoll.isHit) {
+      breakdown += attackRoll.isCrit ? " (CRITICAL!)" : "";
+      breakdown += `
+
+\u{1F4A5} Damage: ${damageDealt}${attackRoll.isCrit ? " (doubled from crit)" : ""}
+`;
+      breakdown += `   ${target.name}: ${hpBefore} \u2192 ${target.hp}/${target.maxHp} HP`;
+      if (defeated) {
+        breakdown += ` [DEFEATED]`;
+      }
+    }
+    let message = "";
+    if (attackRoll.isHit) {
+      message = `${attackRoll.isCrit ? "CRITICAL " : ""}HIT! ${actor.name} deals ${damageDealt} damage to ${target.name}`;
+      if (defeated)
+        message += " [DEFEATED]";
+    } else {
+      message = `MISS! ${actor.name}'s attack misses ${target.name}`;
+    }
+    this.emitter?.publish("combat", {
+      type: "attack_executed",
+      result: {
+        actor: actor.name,
+        target: target.name,
+        roll: attackRoll.roll,
+        total: attackRoll.total,
+        dc,
+        hit: attackRoll.isHit,
+        crit: attackRoll.isCrit,
+        damage: damageDealt,
+        targetHp: target.hp
+      }
+    });
+    return {
+      type: "attack",
+      actor: { id: actor.id, name: actor.name },
+      target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+      attackRoll,
+      damage: damageDealt,
+      success: attackRoll.isHit,
+      defeated,
+      message,
+      detailedBreakdown: breakdown
+    };
+  }
+  /**
+   * Execute a heal action
+   */
+  executeHeal(actorId, targetId, amount) {
+    if (!this.state)
+      throw new Error("No active combat");
+    const actor = this.state.participants.find((p) => p.id === actorId);
+    const target = this.state.participants.find((p) => p.id === targetId);
+    if (!actor)
+      throw new Error(`Actor ${actorId} not found`);
+    if (!target)
+      throw new Error(`Target ${targetId} not found`);
+    const hpBefore = target.hp;
+    const actualHeal = Math.min(amount, target.maxHp - target.hp);
+    target.hp = Math.min(target.maxHp, target.hp + amount);
+    const breakdown = `\u{1F49A} Heal: ${amount} HP
+   ${target.name}: ${hpBefore} \u2192 ${target.hp}/${target.maxHp} HP
+` + (actualHeal < amount ? `   (${amount - actualHeal} HP wasted - at max)` : "");
+    const message = `${actor.name} heals ${target.name} for ${actualHeal} HP`;
+    this.emitter?.publish("combat", {
+      type: "heal_executed",
+      result: {
+        actor: actor.name,
+        target: target.name,
+        amount: actualHeal,
+        targetHp: target.hp
+      }
+    });
+    return {
+      type: "heal",
+      actor: { id: actor.id, name: actor.name },
+      target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+      healAmount: actualHeal,
+      success: true,
+      defeated: false,
+      message,
+      detailedBreakdown: breakdown
+    };
+  }
+  /**
    * Pathfinder 2e: Make a check and return degree of success
    */
   makeCheck(modifier, dc) {
     return this.rng.checkDegree(modifier, dc);
+  }
+  /**
+   * Make a detailed check exposing all dice mechanics
+   */
+  makeCheckDetailed(modifier, dc) {
+    return this.rng.checkDegreeDetailed(modifier, dc);
   }
   /**
    * Apply damage to a participant
@@ -46198,6 +46454,10 @@ var TokenSchema = external_exports.object({
   id: external_exports.string(),
   name: external_exports.string(),
   initiativeBonus: external_exports.number(),
+  initiative: external_exports.number().optional(),
+  // Rolled initiative value
+  isEnemy: external_exports.boolean().optional(),
+  // Whether this is an enemy
   hp: external_exports.number(),
   maxHp: external_exports.number(),
   conditions: external_exports.array(ConditionSchema),
@@ -46292,10 +46552,140 @@ var pubsub2 = null;
 function setCombatPubSub(instance3) {
   pubsub2 = instance3;
 }
+function buildStateJson(state, encounterId) {
+  const currentParticipant = state.participants.find((p) => p.id === state.turnOrder[state.currentTurnIndex]);
+  return {
+    encounterId,
+    round: state.round,
+    currentTurnIndex: state.currentTurnIndex,
+    currentTurn: currentParticipant ? {
+      id: currentParticipant.id,
+      name: currentParticipant.name,
+      isEnemy: currentParticipant.isEnemy
+    } : null,
+    turnOrder: state.turnOrder.map((id) => {
+      const p = state.participants.find((part) => part.id === id);
+      return p?.name || id;
+    }),
+    participants: state.participants.map((p) => ({
+      id: p.id,
+      name: p.name,
+      hp: p.hp,
+      maxHp: p.maxHp,
+      initiative: p.initiative,
+      isEnemy: p.isEnemy,
+      conditions: p.conditions.map((c) => c.type),
+      isDefeated: p.hp <= 0,
+      isCurrentTurn: p.id === currentParticipant?.id
+    }))
+  };
+}
+function formatCombatStateText(state) {
+  const currentParticipant = state.participants.find((p) => p.id === state.turnOrder[state.currentTurnIndex]);
+  const isEnemy = currentParticipant?.isEnemy ?? false;
+  const turnIcon = isEnemy ? "\u{1F479}" : "\u2694\uFE0F";
+  let output = `
+\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+`;
+  output += `\u2502 ${turnIcon} ROUND ${state.round} \u2014 ${currentParticipant?.name}'s Turn
+`;
+  output += `\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+`;
+  output += `\u{1F4CB} INITIATIVE ORDER
+`;
+  output += `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+`;
+  state.turnOrder.forEach((id, index) => {
+    const p = state.participants.find((part) => part.id === id);
+    if (!p)
+      return;
+    const isCurrent = index === state.currentTurnIndex;
+    const icon = p.isEnemy ? "\u{1F479}" : "\u{1F9D9}";
+    const hpPct = p.maxHp > 0 ? p.hp / p.maxHp * 100 : 0;
+    const hpBar = createHpBar(hpPct);
+    const marker = isCurrent ? "\u25B6" : " ";
+    const status = p.hp <= 0 ? "\u{1F480} DEFEATED" : "";
+    output += `${marker} ${icon} ${p.name.padEnd(18)} ${hpBar} ${p.hp}/${p.maxHp} HP  [Init: ${p.initiative}] ${status}
+`;
+  });
+  output += `
+`;
+  const validPlayerTargets = state.participants.filter((p) => !p.isEnemy && p.hp > 0).map((p) => `${p.name} (${p.id})`);
+  const validEnemyTargets = state.participants.filter((p) => p.isEnemy && p.hp > 0).map((p) => `${p.name} (${p.id})`);
+  if (isEnemy && currentParticipant && currentParticipant.hp > 0) {
+    output += `\u26A1 ENEMY TURN
+`;
+    output += `   Available targets: ${validPlayerTargets.join(", ") || "None"}
+`;
+    output += `   \u2192 Execute attack, then call advance_turn
+`;
+  } else if (currentParticipant && currentParticipant.hp > 0) {
+    output += `\u{1F3AE} PLAYER TURN
+`;
+    output += `   Available targets: ${validEnemyTargets.join(", ") || "None"}
+`;
+    output += `   \u2192 Awaiting player action
+`;
+  } else {
+    output += `\u23ED\uFE0F Current combatant is defeated \u2014 call advance_turn
+`;
+  }
+  return output;
+}
+function createHpBar(percentage) {
+  const filled = Math.round(percentage / 10);
+  const empty = 10 - filled;
+  const bar = "\u2588".repeat(filled) + "\u2591".repeat(empty);
+  return `[${bar}]`;
+}
+function formatAttackResult(result) {
+  let output = `
+\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+`;
+  output += `\u2502 \u2694\uFE0F  ATTACK ACTION
+`;
+  output += `\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+`;
+  output += `${result.actor.name} attacks ${result.target.name}!
+
+`;
+  output += result.detailedBreakdown;
+  if (result.defeated) {
+    output += `
+
+\u{1F480} ${result.target.name} has been defeated!`;
+  }
+  output += `
+
+\u2192 Call advance_turn to proceed`;
+  return output;
+}
+function formatHealResult(result) {
+  let output = `
+\u250C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510
+`;
+  output += `\u2502 \u{1F49A} HEAL ACTION
+`;
+  output += `\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+`;
+  output += `${result.actor.name} heals ${result.target.name}!
+
+`;
+  output += result.detailedBreakdown;
+  output += `
+
+\u2192 Call advance_turn to proceed`;
+  return output;
+}
 var CombatTools = {
   CREATE_ENCOUNTER: {
     name: "create_encounter",
     description: `Create a new combat encounter with the specified participants.
+Initiative is rolled automatically (1d20 + initiativeBonus).
+Enemy detection is automatic based on ID/name patterns, but you can override with isEnemy.
 
 Example:
 {
@@ -46306,14 +46696,16 @@ Example:
       "name": "Valeros",
       "initiativeBonus": 2,
       "hp": 20,
-      "maxHp": 20
+      "maxHp": 20,
+      "isEnemy": false
     },
     {
       "id": "goblin-1",
       "name": "Goblin",
       "initiativeBonus": 1,
       "hp": 7,
-      "maxHp": 7
+      "maxHp": 7,
+      "isEnemy": true
     }
   ]
 }`,
@@ -46325,6 +46717,7 @@ Example:
         initiativeBonus: external_exports.number().int(),
         hp: external_exports.number().int().positive(),
         maxHp: external_exports.number().int().positive(),
+        isEnemy: external_exports.boolean().optional().describe("Whether this is an enemy (auto-detected if not set)"),
         conditions: external_exports.array(external_exports.any()).default([])
       })).min(1)
     })
@@ -46393,7 +46786,13 @@ async function handleCreateEncounter(args, ctx) {
   const parsed = CombatTools.CREATE_ENCOUNTER.inputSchema.parse(args);
   const engine = new CombatEngine(parsed.seed, pubsub2 || void 0);
   const participants = parsed.participants.map((p) => ({
-    ...p,
+    id: p.id,
+    name: p.name,
+    initiativeBonus: p.initiativeBonus,
+    hp: p.hp,
+    maxHp: p.maxHp,
+    isEnemy: p.isEnemy,
+    // Will be auto-detected in startEncounter if undefined
     conditions: []
   }));
   const state = engine.startEncounter(participants);
@@ -46403,11 +46802,14 @@ async function handleCreateEncounter(args, ctx) {
   const repo = new EncounterRepository(db);
   repo.create({
     id: encounterId,
-    // regionId is optional
     tokens: state.participants.map((p) => ({
       id: p.id,
       name: p.name,
       initiativeBonus: p.initiativeBonus,
+      initiative: p.initiative,
+      // Store rolled initiative
+      isEnemy: p.isEnemy,
+      // Store enemy flag
       hp: p.hp,
       maxHp: p.maxHp,
       conditions: p.conditions,
@@ -46419,127 +46821,139 @@ async function handleCreateEncounter(args, ctx) {
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   });
-  const currentParticipant = engine.getCurrentParticipant();
+  const stateJson = buildStateJson(state, encounterId);
+  const formattedText = formatCombatStateText(state);
+  let output = `\u2694\uFE0F COMBAT STARTED
+`;
+  output += `Encounter ID: ${encounterId}
+`;
+  output += formattedText;
+  output += `
+
+<!-- STATE_JSON
+${JSON.stringify(stateJson)}
+STATE_JSON -->`;
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify({
-          encounterId,
-          message: "Combat encounter started",
-          turnOrder: state.turnOrder,
-          round: state.round,
-          currentTurn: currentParticipant?.name || null
-        }, null, 2)
+        text: output
       }
     ]
   };
 }
 async function handleGetEncounterState(args, ctx) {
   const parsed = CombatTools.GET_ENCOUNTER_STATE.inputSchema.parse(args);
-  const engine = getCombatManager().get(`${ctx.sessionId}:${parsed.encounterId}`);
+  let engine = getCombatManager().get(`${ctx.sessionId}:${parsed.encounterId}`);
   if (!engine) {
-    throw new Error(`Encounter ${parsed.encounterId} not found.`);
+    const db = getDb(process.env.NODE_ENV === "test" ? ":memory:" : "rpg.db");
+    const repo = new EncounterRepository(db);
+    const state2 = repo.loadState(parsed.encounterId);
+    if (!state2) {
+      throw new Error(`Encounter ${parsed.encounterId} not found.`);
+    }
+    engine = new CombatEngine(parsed.encounterId, pubsub2 || void 0);
+    engine.loadState(state2);
+    getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
   }
   const state = engine.getState();
   if (!state) {
     throw new Error("No active encounter");
   }
-  const currentParticipant = engine.getCurrentParticipant();
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          encounterId: parsed.encounterId,
-          round: state.round,
-          currentTurn: {
-            participantId: currentParticipant?.id,
-            participantName: currentParticipant?.name
-          },
-          participants: state.participants.map((p) => ({
-            id: p.id,
-            name: p.name,
-            hp: p.hp,
-            maxHp: p.maxHp,
-            conditions: p.conditions
-          })),
-          turnOrder: state.turnOrder
-        }, null, 2)
-      }
-    ]
-  };
+  const stateJson = buildStateJson(state, parsed.encounterId);
+  return stateJson;
 }
 async function handleExecuteCombatAction(args, ctx) {
   const parsed = CombatTools.EXECUTE_COMBAT_ACTION.inputSchema.parse(args);
-  const engine = getCombatManager().get(`${ctx.sessionId}:${parsed.encounterId}`);
+  let engine = getCombatManager().get(`${ctx.sessionId}:${parsed.encounterId}`);
   if (!engine) {
-    throw new Error(`Encounter ${parsed.encounterId} not found.`);
+    const db = getDb(process.env.NODE_ENV === "test" ? ":memory:" : "rpg.db");
+    const repo = new EncounterRepository(db);
+    const state2 = repo.loadState(parsed.encounterId);
+    if (!state2) {
+      throw new Error(`Encounter ${parsed.encounterId} not found.`);
+    }
+    engine = new CombatEngine(parsed.encounterId, pubsub2 || void 0);
+    engine.loadState(state2);
+    getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
   }
-  let result = {
-    action: parsed.action,
-    actorId: parsed.actorId,
-    targetId: parsed.targetId
-  };
+  let result;
+  let output = "";
   if (parsed.action === "attack") {
-    if (parsed.attackBonus === void 0 || parsed.dc === void 0) {
-      throw new Error("Attack action requires attackBonus and dc");
+    if (parsed.attackBonus === void 0 || parsed.dc === void 0 || parsed.damage === void 0) {
+      throw new Error("Attack action requires attackBonus, dc, and damage");
     }
-    const degree = engine.makeCheck(parsed.attackBonus, parsed.dc);
-    const success = degree === "success" || degree === "critical-success";
-    result.success = success;
-    result.degree = degree;
-    if (success && parsed.damage) {
-      engine.applyDamage(parsed.targetId, parsed.damage);
-      result.damageDealt = parsed.damage;
-    } else {
-      result.damageDealt = 0;
-    }
+    result = engine.executeAttack(parsed.actorId, parsed.targetId, parsed.attackBonus, parsed.dc, parsed.damage);
+    output = formatAttackResult(result);
   } else if (parsed.action === "heal") {
     if (parsed.amount === void 0) {
       throw new Error("Heal action requires amount");
     }
-    engine.heal(parsed.targetId, parsed.amount);
-    result.amountHealed = parsed.amount;
+    result = engine.executeHeal(parsed.actorId, parsed.targetId, parsed.amount);
+    output = formatHealResult(result);
+  } else {
+    throw new Error(`Unknown action: ${parsed.action}`);
   }
   const state = engine.getState();
   if (state) {
     const db = getDb(process.env.NODE_ENV === "test" ? ":memory:" : "rpg.db");
     const repo = new EncounterRepository(db);
     repo.saveState(parsed.encounterId, state);
+    const stateJson = buildStateJson(state, parsed.encounterId);
+    output += `
+
+<!-- STATE_JSON
+${JSON.stringify(stateJson)}
+STATE_JSON -->`;
   }
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify(result, null, 2)
+        text: output
       }
     ]
   };
 }
 async function handleAdvanceTurn(args, ctx) {
   const parsed = CombatTools.ADVANCE_TURN.inputSchema.parse(args);
-  const engine = getCombatManager().get(`${ctx.sessionId}:${parsed.encounterId}`);
+  let engine = getCombatManager().get(`${ctx.sessionId}:${parsed.encounterId}`);
   if (!engine) {
-    throw new Error(`Encounter ${parsed.encounterId} not found.`);
+    const db = getDb(process.env.NODE_ENV === "test" ? ":memory:" : "rpg.db");
+    const repo = new EncounterRepository(db);
+    const state2 = repo.loadState(parsed.encounterId);
+    if (!state2) {
+      throw new Error(`Encounter ${parsed.encounterId} not found.`);
+    }
+    engine = new CombatEngine(parsed.encounterId, pubsub2 || void 0);
+    engine.loadState(state2);
+    getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
   }
   const previousParticipant = engine.getCurrentParticipant();
-  const newParticipant = engine.nextTurnWithConditions();
+  engine.nextTurnWithConditions();
   const state = engine.getState();
   if (state) {
     const db = getDb(process.env.NODE_ENV === "test" ? ":memory:" : "rpg.db");
     const repo = new EncounterRepository(db);
     repo.saveState(parsed.encounterId, state);
   }
+  let output = `
+\u23ED\uFE0F TURN ENDED: ${previousParticipant?.name}
+`;
+  output += state ? formatCombatStateText(state) : "No combat state";
+  if (state) {
+    const stateJson = buildStateJson(state, parsed.encounterId);
+    output += `
+
+<!-- STATE_JSON
+${JSON.stringify(stateJson)}
+STATE_JSON -->`;
+  }
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify({
-          previousTurn: previousParticipant?.name || null,
-          currentTurn: newParticipant?.name || null,
-          round: state?.round || 0
-        }, null, 2)
+        text: output
       }
     ]
   };
@@ -46554,10 +46968,11 @@ async function handleEndEncounter(args, ctx) {
     content: [
       {
         type: "text",
-        text: JSON.stringify({
-          message: "Encounter ended",
-          encounterId: parsed.encounterId
-        }, null, 2)
+        text: `
+\u{1F3C1} COMBAT ENDED
+Encounter ID: ${parsed.encounterId}
+
+All combatants have been removed from the battlefield.`
       }
     ]
   };
@@ -46573,14 +46988,20 @@ async function handleLoadEncounter(args, ctx) {
   const engine = new CombatEngine(parsed.encounterId, pubsub2 || void 0);
   engine.loadState(state);
   getCombatManager().create(`${ctx.sessionId}:${parsed.encounterId}`, engine);
+  const stateJson = buildStateJson(state, parsed.encounterId);
+  let output = `\u{1F4E5} ENCOUNTER LOADED
+Encounter ID: ${parsed.encounterId}
+`;
+  output += formatCombatStateText(state);
+  output += `
+
+<!-- STATE_JSON
+${JSON.stringify(stateJson)}
+STATE_JSON -->`;
   return {
     content: [{
       type: "text",
-      text: JSON.stringify({
-        message: "Encounter loaded",
-        encounterId: parsed.encounterId,
-        round: state.round
-      }, null, 2)
+      text: output
     }]
   };
 }
@@ -46601,6 +47022,11 @@ var PartySchema = external_exports.object({
   currentLocation: external_exports.string().optional(),
   currentQuestId: external_exports.string().optional(),
   formation: external_exports.string().default("standard"),
+  // NEW: Position fields for world map location tracking
+  positionX: external_exports.number().int().nonnegative().optional(),
+  positionY: external_exports.number().int().nonnegative().optional(),
+  currentPOI: external_exports.string().optional(),
+  // Structure ID if at a POI
   createdAt: external_exports.string().datetime(),
   updatedAt: external_exports.string().datetime(),
   lastPlayedAt: external_exports.string().datetime().optional()
@@ -51160,9 +51586,9 @@ var PartyRepository = class {
     const validated = PartySchema.parse(party);
     const stmt = this.db.prepare(`
             INSERT INTO parties (id, name, description, world_id, status, current_location, 
-                current_quest_id, formation, created_at, updated_at, last_played_at)
+                current_quest_id, formation, position_x, position_y, current_poi, created_at, updated_at, last_played_at)
             VALUES (@id, @name, @description, @worldId, @status, @currentLocation, 
-                @currentQuestId, @formation, @createdAt, @updatedAt, @lastPlayedAt)
+                @currentQuestId, @formation, @positionX, @positionY, @currentPOI, @createdAt, @updatedAt, @lastPlayedAt)
         `);
     stmt.run({
       id: validated.id,
@@ -51173,6 +51599,9 @@ var PartyRepository = class {
       currentLocation: validated.currentLocation || null,
       currentQuestId: validated.currentQuestId || null,
       formation: validated.formation,
+      positionX: validated.positionX ?? null,
+      positionY: validated.positionY ?? null,
+      currentPOI: validated.currentPOI || null,
       createdAt: validated.createdAt,
       updatedAt: validated.updatedAt,
       lastPlayedAt: validated.lastPlayedAt || null
@@ -51216,10 +51645,11 @@ var PartyRepository = class {
             UPDATE parties SET 
                 name = ?, description = ?, world_id = ?, status = ?, 
                 current_location = ?, current_quest_id = ?, formation = ?,
+                position_x = ?, position_y = ?, current_poi = ?,
                 updated_at = ?, last_played_at = ?
             WHERE id = ?
         `);
-    stmt.run(validated.name, validated.description || null, validated.worldId || null, validated.status, validated.currentLocation || null, validated.currentQuestId || null, validated.formation, validated.updatedAt, validated.lastPlayedAt || null, id);
+    stmt.run(validated.name, validated.description || null, validated.worldId || null, validated.status, validated.currentLocation || null, validated.currentQuestId || null, validated.formation, validated.positionX ?? null, validated.positionY ?? null, validated.currentPOI || null, validated.updatedAt, validated.lastPlayedAt || null, id);
     return validated;
   }
   delete(id) {
@@ -51392,6 +51822,68 @@ var PartyRepository = class {
             UPDATE parties SET last_played_at = ?, updated_at = ? WHERE id = ?
         `).run(now, now, partyId);
   }
+  // ========== Party Position Management ==========
+  updatePartyPosition(partyId, x, y, locationName, poiId) {
+    const stmt = this.db.prepare(`
+            UPDATE parties 
+            SET position_x = ?, position_y = ?, current_location = ?, 
+                current_poi = ?, updated_at = ?
+            WHERE id = ?
+            RETURNING *
+        `);
+    const result = stmt.get(x, y, locationName, poiId || null, (/* @__PURE__ */ new Date()).toISOString(), partyId);
+    if (!result) {
+      throw new Error(`Party not found: ${partyId}`);
+    }
+    return this.rowToParty(result);
+  }
+  getPartyPosition(partyId) {
+    const stmt = this.db.prepare(`
+            SELECT position_x, position_y, current_location, current_poi
+            FROM parties
+            WHERE id = ?
+        `);
+    const result = stmt.get(partyId);
+    if (!result || result.position_x === null) {
+      return null;
+    }
+    return {
+      x: result.position_x,
+      y: result.position_y,
+      locationName: result.current_location || "Unknown Location",
+      poiId: result.current_poi || void 0
+    };
+  }
+  getPartiesWithPositions(worldId) {
+    const stmt = this.db.prepare(`
+            SELECT * FROM parties
+            WHERE world_id = ? AND position_x IS NOT NULL
+            ORDER BY updated_at DESC
+        `);
+    const results = stmt.all(worldId);
+    return results.map((row) => ({
+      ...this.rowToParty(row),
+      position: {
+        x: row.position_x || 0,
+        y: row.position_y || 0,
+        locationName: row.current_location || "Unknown Location",
+        poiId: row.current_poi || void 0
+      }
+    }));
+  }
+  getPartiesNearPosition(worldId, x, y, radiusSquares = 3) {
+    const stmt = this.db.prepare(`
+            SELECT * FROM parties
+            WHERE world_id = ?
+                AND position_x IS NOT NULL
+                AND ABS(position_x - ?) <= ?
+                AND ABS(position_y - ?) <= ?
+            ORDER BY (position_x - ?) * (position_x - ?) +
+                     (position_y - ?) * (position_y - ?)
+        `);
+    const results = stmt.all(worldId, x, radiusSquares, y, radiusSquares, x, x, y, y);
+    return results.map((row) => this.rowToParty(row));
+  }
   // ========== Row converters ==========
   rowToParty(row) {
     return PartySchema.parse({
@@ -51403,6 +51895,9 @@ var PartyRepository = class {
       currentLocation: row.current_location ?? void 0,
       currentQuestId: row.current_quest_id ?? void 0,
       formation: row.formation,
+      positionX: row.position_x ?? void 0,
+      positionY: row.position_y ?? void 0,
+      currentPOI: row.current_poi ?? void 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       lastPlayedAt: row.last_played_at ?? void 0
@@ -51581,6 +52076,44 @@ Verbosity levels:
     description: "Get characters not assigned to any party. Useful for adding members.",
     inputSchema: external_exports.object({
       excludeEnemies: external_exports.boolean().optional().default(true)
+    })
+  },
+  // Party Position & Movement
+  MOVE_PARTY: {
+    name: "move_party",
+    description: `Move a party to a new location on the world map. Supports moving to coordinates or to a POI (structure).
+
+Example:
+{
+  "partyId": "party-uuid",
+  "targetX": 60,
+  "targetY": 70,
+  "locationName": "Rivendell",
+  "poiId": "structure-uuid"
+}`,
+    inputSchema: external_exports.object({
+      partyId: external_exports.string(),
+      targetX: external_exports.number().int().nonnegative(),
+      targetY: external_exports.number().int().nonnegative(),
+      locationName: external_exports.string().min(1),
+      poiId: external_exports.string().optional()
+    })
+  },
+  GET_PARTY_POSITION: {
+    name: "get_party_position",
+    description: "Get the current position of a party on the world map.",
+    inputSchema: external_exports.object({
+      partyId: external_exports.string()
+    })
+  },
+  GET_PARTIES_IN_REGION: {
+    name: "get_parties_in_region",
+    description: "Get all parties within a certain distance of a coordinate (useful for finding nearby groups).",
+    inputSchema: external_exports.object({
+      worldId: external_exports.string(),
+      x: external_exports.number().int(),
+      y: external_exports.number().int(),
+      radiusSquares: external_exports.number().int().optional().default(3)
     })
   }
 };
@@ -51938,6 +52471,113 @@ async function handleGetUnassignedCharacters(args, _ctx) {
     }]
   };
 }
+async function handleMoveParty(args, _ctx) {
+  const { partyRepo } = ensureDb5();
+  const parsed = PartyTools.MOVE_PARTY.inputSchema.parse(args);
+  try {
+    const party = partyRepo.findById(parsed.partyId);
+    if (!party) {
+      throw new Error(`Party not found: ${parsed.partyId}`);
+    }
+    const updatedParty = partyRepo.updatePartyPosition(parsed.partyId, parsed.targetX, parsed.targetY, parsed.locationName, parsed.poiId);
+    if (!updatedParty) {
+      throw new Error(`Failed to update party position: ${parsed.partyId}`);
+    }
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          party: updatedParty,
+          newPosition: {
+            x: parsed.targetX,
+            y: parsed.targetY,
+            location: parsed.locationName,
+            poiId: parsed.poiId || null
+          },
+          message: `Party "${updatedParty.name}" moved to ${parsed.locationName} (${parsed.targetX}, ${parsed.targetY})`
+        }, null, 2)
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: false,
+          error: error.message || "Failed to move party"
+        }, null, 2)
+      }]
+    };
+  }
+}
+async function handleGetPartyPosition(args, _ctx) {
+  const { partyRepo } = ensureDb5();
+  const parsed = PartyTools.GET_PARTY_POSITION.inputSchema.parse(args);
+  try {
+    const party = partyRepo.findById(parsed.partyId);
+    if (!party) {
+      throw new Error(`Party not found: ${parsed.partyId}`);
+    }
+    const position = partyRepo.getPartyPosition(parsed.partyId);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          party: {
+            id: party.id,
+            name: party.name
+          },
+          position: position || {
+            x: null,
+            y: null,
+            locationName: "Unknown",
+            poiId: null
+          }
+        }, null, 2)
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: false,
+          error: error.message || "Failed to get party position"
+        }, null, 2)
+      }]
+    };
+  }
+}
+async function handleGetPartiesInRegion(args, _ctx) {
+  const { partyRepo } = ensureDb5();
+  const parsed = PartyTools.GET_PARTIES_IN_REGION.inputSchema.parse(args);
+  try {
+    const parties = partyRepo.getPartiesNearPosition(parsed.worldId, parsed.x, parsed.y, parsed.radiusSquares);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          count: parties.length,
+          parties,
+          message: `Found ${parties.length} parties within ${parsed.radiusSquares} squares of (${parsed.x}, ${parsed.y})`
+        }, null, 2)
+      }]
+    };
+  } catch (error) {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: false,
+          error: error.message || "Failed to get parties in region"
+        }, null, 2)
+      }]
+    };
+  }
+}
 
 // dist/engine/pubsub.js
 var PubSub = class {
@@ -52125,6 +52765,9 @@ async function main() {
   server.tool(PartyTools.GET_PARTY_MEMBERS.name, PartyTools.GET_PARTY_MEMBERS.description, PartyTools.GET_PARTY_MEMBERS.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(PartyTools.GET_PARTY_MEMBERS.name, withSession(PartyTools.GET_PARTY_MEMBERS.inputSchema, handleGetPartyMembers)));
   server.tool(PartyTools.GET_PARTY_CONTEXT.name, PartyTools.GET_PARTY_CONTEXT.description, PartyTools.GET_PARTY_CONTEXT.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(PartyTools.GET_PARTY_CONTEXT.name, withSession(PartyTools.GET_PARTY_CONTEXT.inputSchema, handleGetPartyContext)));
   server.tool(PartyTools.GET_UNASSIGNED_CHARACTERS.name, PartyTools.GET_UNASSIGNED_CHARACTERS.description, PartyTools.GET_UNASSIGNED_CHARACTERS.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(PartyTools.GET_UNASSIGNED_CHARACTERS.name, withSession(PartyTools.GET_UNASSIGNED_CHARACTERS.inputSchema, handleGetUnassignedCharacters)));
+  server.tool(PartyTools.MOVE_PARTY.name, PartyTools.MOVE_PARTY.description, PartyTools.MOVE_PARTY.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(PartyTools.MOVE_PARTY.name, withSession(PartyTools.MOVE_PARTY.inputSchema, handleMoveParty)));
+  server.tool(PartyTools.GET_PARTY_POSITION.name, PartyTools.GET_PARTY_POSITION.description, PartyTools.GET_PARTY_POSITION.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(PartyTools.GET_PARTY_POSITION.name, withSession(PartyTools.GET_PARTY_POSITION.inputSchema, handleGetPartyPosition)));
+  server.tool(PartyTools.GET_PARTIES_IN_REGION.name, PartyTools.GET_PARTIES_IN_REGION.description, PartyTools.GET_PARTIES_IN_REGION.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(PartyTools.GET_PARTIES_IN_REGION.name, withSession(PartyTools.GET_PARTIES_IN_REGION.inputSchema, handleGetPartiesInRegion)));
   server.tool(InventoryTools.CREATE_ITEM_TEMPLATE.name, InventoryTools.CREATE_ITEM_TEMPLATE.description, InventoryTools.CREATE_ITEM_TEMPLATE.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(InventoryTools.CREATE_ITEM_TEMPLATE.name, withSession(InventoryTools.CREATE_ITEM_TEMPLATE.inputSchema, handleCreateItemTemplate)));
   server.tool(InventoryTools.GIVE_ITEM.name, InventoryTools.GIVE_ITEM.description, InventoryTools.GIVE_ITEM.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(InventoryTools.GIVE_ITEM.name, withSession(InventoryTools.GIVE_ITEM.inputSchema, handleGiveItem)));
   server.tool(InventoryTools.REMOVE_ITEM.name, InventoryTools.REMOVE_ITEM.description, InventoryTools.REMOVE_ITEM.inputSchema.extend({ sessionId: external_exports.string().optional() }).shape, auditLogger.wrapHandler(InventoryTools.REMOVE_ITEM.name, withSession(InventoryTools.REMOVE_ITEM.inputSchema, handleRemoveItem)));

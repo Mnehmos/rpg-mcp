@@ -16,6 +16,8 @@ export const TokenSchema = z.object({
     id: z.string(),
     name: z.string(),
     initiativeBonus: z.number(),
+    initiative: z.number().optional(),  // Rolled initiative value
+    isEnemy: z.boolean().optional(),    // Whether this is an enemy
     hp: z.number(),
     maxHp: z.number(),
     conditions: z.array(ConditionSchema),

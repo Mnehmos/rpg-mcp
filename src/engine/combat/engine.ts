@@ -1,4 +1,4 @@
-import { CombatRNG } from './rng.js';
+import { CombatRNG, CheckResult } from './rng.js';
 import { Condition, ConditionType, DurationType, Ability, CONDITION_EFFECTS } from './conditions.js';
 
 /**
@@ -8,6 +8,8 @@ export interface CombatParticipant {
     id: string;
     name: string;
     initiativeBonus: number;
+    initiative?: number;  // Rolled initiative value (set when encounter starts)
+    isEnemy?: boolean;    // Whether this is an enemy (for turn automation)
     hp: number;
     maxHp: number;
     conditions: Condition[];
@@ -29,6 +31,29 @@ export interface CombatState {
     turnOrder: string[]; // IDs in initiative order
     currentTurnIndex: number;
     round: number;
+}
+
+/**
+ * Result of a combat action with full transparency
+ */
+export interface CombatActionResult {
+    type: 'attack' | 'heal' | 'damage' | 'save';
+    actor: { id: string; name: string };
+    target: { id: string; name: string; hpBefore: number; hpAfter: number; maxHp: number };
+    
+    // Attack specifics (if type === 'attack')
+    attackRoll?: CheckResult;
+    damage?: number;
+    damageRolls?: number[];  // Individual damage dice
+    
+    // Heal specifics (if type === 'heal')
+    healAmount?: number;
+    
+    // Status
+    success: boolean;
+    defeated: boolean;
+    message: string;
+    detailedBreakdown: string;
 }
 
 export interface EventEmitter {
@@ -54,14 +79,19 @@ export class CombatEngine {
      * Rolls initiative for all participants and establishes turn order
      */
     startEncounter(participants: CombatParticipant[]): CombatState {
-        // Roll initiative for each participant
-        const initiativeRolls = participants.map(p => ({
-            id: p.id,
-            initiative: this.rng.d20(p.initiativeBonus)
-        }));
+        // Roll initiative for each participant and store the value
+        const participantsWithInitiative = participants.map(p => {
+            const rolledInitiative = this.rng.d20(p.initiativeBonus);
+            return {
+                ...p,
+                initiative: rolledInitiative,
+                // Auto-detect isEnemy if not explicitly set
+                isEnemy: p.isEnemy ?? this.detectIsEnemy(p.id, p.name)
+            };
+        });
 
         // Sort by initiative (highest first), use ID as tiebreaker for determinism
-        initiativeRolls.sort((a, b) => {
+        participantsWithInitiative.sort((a, b) => {
             if (b.initiative !== a.initiative) {
                 return b.initiative - a.initiative;
             }
@@ -69,8 +99,8 @@ export class CombatEngine {
         });
 
         this.state = {
-            participants: [...participants],
-            turnOrder: initiativeRolls.map(r => r.id),
+            participants: participantsWithInitiative,
+            turnOrder: participantsWithInitiative.map(r => r.id),
             currentTurnIndex: 0,
             round: 1
         };
@@ -81,6 +111,43 @@ export class CombatEngine {
         });
 
         return this.state;
+    }
+
+    /**
+     * Auto-detect if a participant is an enemy based on ID/name patterns
+     */
+    private detectIsEnemy(id: string, name: string): boolean {
+        const idLower = id.toLowerCase();
+        const nameLower = name.toLowerCase();
+
+        // Common enemy patterns
+        const enemyPatterns = [
+            'goblin', 'orc', 'wolf', 'bandit', 'skeleton', 'zombie',
+            'dragon', 'troll', 'ogre', 'kobold', 'gnoll', 'demon',
+            'devil', 'undead', 'enemy', 'monster', 'creature', 'beast',
+            'spider', 'rat', 'bat', 'slime', 'ghost', 'wraith'
+        ];
+
+        // Check if ID or name contains enemy patterns
+        for (const pattern of enemyPatterns) {
+            if (idLower.includes(pattern) || nameLower.includes(pattern)) {
+                return true;
+            }
+        }
+
+        // Common player/ally patterns (not enemies)
+        const allyPatterns = [
+            'hero', 'player', 'pc', 'ally', 'companion', 'npc-friendly'
+        ];
+
+        for (const pattern of allyPatterns) {
+            if (idLower.includes(pattern) || nameLower.includes(pattern)) {
+                return false;
+            }
+        }
+
+        // Default: assume it's an enemy if not clearly a player
+        return !idLower.startsWith('player') && !idLower.startsWith('hero');
     }
 
     /**
@@ -126,6 +193,139 @@ export class CombatEngine {
     }
 
     /**
+     * Execute an attack with full transparency
+     * Returns detailed breakdown of what happened
+     */
+    executeAttack(
+        actorId: string, 
+        targetId: string, 
+        attackBonus: number, 
+        dc: number, 
+        damage: number
+    ): CombatActionResult {
+        if (!this.state) throw new Error('No active combat');
+
+        const actor = this.state.participants.find(p => p.id === actorId);
+        const target = this.state.participants.find(p => p.id === targetId);
+        
+        if (!actor) throw new Error(`Actor ${actorId} not found`);
+        if (!target) throw new Error(`Target ${targetId} not found`);
+
+        const hpBefore = target.hp;
+        
+        // Roll with full transparency
+        const attackRoll = this.rng.checkDegreeDetailed(attackBonus, dc);
+        
+        let damageDealt = 0;
+        if (attackRoll.isHit) {
+            damageDealt = attackRoll.isCrit ? damage * 2 : damage;
+            target.hp = Math.max(0, target.hp - damageDealt);
+        }
+
+        const defeated = target.hp <= 0;
+
+        // Build detailed breakdown
+        let breakdown = `🎲 Attack Roll: d20(${attackRoll.roll}) + ${attackBonus} = ${attackRoll.total} vs AC ${dc}\n`;
+        
+        if (attackRoll.isNat20) {
+            breakdown += `   ⭐ NATURAL 20!\n`;
+        } else if (attackRoll.isNat1) {
+            breakdown += `   💀 NATURAL 1!\n`;
+        }
+        
+        breakdown += `   ${attackRoll.isHit ? '✅ HIT' : '❌ MISS'}`;
+        
+        if (attackRoll.isHit) {
+            breakdown += attackRoll.isCrit ? ' (CRITICAL!)' : '';
+            breakdown += `\n\n💥 Damage: ${damageDealt}${attackRoll.isCrit ? ' (doubled from crit)' : ''}\n`;
+            breakdown += `   ${target.name}: ${hpBefore} → ${target.hp}/${target.maxHp} HP`;
+            if (defeated) {
+                breakdown += ` [DEFEATED]`;
+            }
+        }
+
+        // Build simple message
+        let message = '';
+        if (attackRoll.isHit) {
+            message = `${attackRoll.isCrit ? 'CRITICAL ' : ''}HIT! ${actor.name} deals ${damageDealt} damage to ${target.name}`;
+            if (defeated) message += ' [DEFEATED]';
+        } else {
+            message = `MISS! ${actor.name}'s attack misses ${target.name}`;
+        }
+
+        this.emitter?.publish('combat', {
+            type: 'attack_executed',
+            result: {
+                actor: actor.name,
+                target: target.name,
+                roll: attackRoll.roll,
+                total: attackRoll.total,
+                dc,
+                hit: attackRoll.isHit,
+                crit: attackRoll.isCrit,
+                damage: damageDealt,
+                targetHp: target.hp
+            }
+        });
+
+        return {
+            type: 'attack',
+            actor: { id: actor.id, name: actor.name },
+            target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+            attackRoll,
+            damage: damageDealt,
+            success: attackRoll.isHit,
+            defeated,
+            message,
+            detailedBreakdown: breakdown
+        };
+    }
+
+    /**
+     * Execute a heal action
+     */
+    executeHeal(actorId: string, targetId: string, amount: number): CombatActionResult {
+        if (!this.state) throw new Error('No active combat');
+
+        const actor = this.state.participants.find(p => p.id === actorId);
+        const target = this.state.participants.find(p => p.id === targetId);
+        
+        if (!actor) throw new Error(`Actor ${actorId} not found`);
+        if (!target) throw new Error(`Target ${targetId} not found`);
+
+        const hpBefore = target.hp;
+        const actualHeal = Math.min(amount, target.maxHp - target.hp);
+        target.hp = Math.min(target.maxHp, target.hp + amount);
+
+        const breakdown = `💚 Heal: ${amount} HP\n` +
+            `   ${target.name}: ${hpBefore} → ${target.hp}/${target.maxHp} HP\n` +
+            (actualHeal < amount ? `   (${amount - actualHeal} HP wasted - at max)` : '');
+
+        const message = `${actor.name} heals ${target.name} for ${actualHeal} HP`;
+
+        this.emitter?.publish('combat', {
+            type: 'heal_executed',
+            result: {
+                actor: actor.name,
+                target: target.name,
+                amount: actualHeal,
+                targetHp: target.hp
+            }
+        });
+
+        return {
+            type: 'heal',
+            actor: { id: actor.id, name: actor.name },
+            target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+            healAmount: actualHeal,
+            success: true,
+            defeated: false,
+            message,
+            detailedBreakdown: breakdown
+        };
+    }
+
+    /**
      * Pathfinder 2e: Make a check and return degree of success
      */
     makeCheck(
@@ -133,6 +333,13 @@ export class CombatEngine {
         dc: number
     ): 'critical-failure' | 'failure' | 'success' | 'critical-success' {
         return this.rng.checkDegree(modifier, dc);
+    }
+
+    /**
+     * Make a detailed check exposing all dice mechanics
+     */
+    makeCheckDetailed(modifier: number, dc: number): CheckResult {
+        return this.rng.checkDegreeDetailed(modifier, dc);
     }
 
     /**

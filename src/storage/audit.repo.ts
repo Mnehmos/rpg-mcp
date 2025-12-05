@@ -38,7 +38,7 @@ export class AuditRepository {
         `);
 
         const rows = stmt.all(limit) as any[];
-        console.log(`AuditRepository.list found ${rows.length} rows`);
+        console.error(`AuditRepository.list found ${rows.length} rows`);
 
         return rows.map(row => ({
             id: row.id,

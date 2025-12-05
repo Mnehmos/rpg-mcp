@@ -217,6 +217,18 @@ export class CombatRNG {
         modifier: number,
         dc: number
     ): 'critical-failure' | 'failure' | 'success' | 'critical-success' {
+        const result = this.checkDegreeDetailed(modifier, dc);
+        return result.degree;
+    }
+
+    /**
+     * Detailed check result with full dice mechanics exposed
+     * This is the TRANSPARENT version - shows exactly what was rolled
+     */
+    checkDegreeDetailed(
+        modifier: number,
+        dc: number
+    ): CheckResult {
         const roll = this.rollDie(20);
         const total = roll + modifier;
         const margin = total - dc;
@@ -234,20 +246,91 @@ export class CombatRNG {
             degree = 'critical-failure';
         }
 
+        const isNat20 = roll === 20;
+        const isNat1 = roll === 1;
+
         // Adjust for natural 20 (improve by one step)
-        if (roll === 20) {
+        if (isNat20) {
             if (degree === 'failure') degree = 'success';
             else if (degree === 'success') degree = 'critical-success';
-            // critical-failure -> failure already handled by margin
         }
 
         // Adjust for natural 1 (worsen by one step)
-        if (roll === 1) {
+        if (isNat1) {
             if (degree === 'success') degree = 'failure';
             else if (degree === 'critical-success') degree = 'success';
-            // failure -> critical-failure already handled by margin
         }
 
-        return degree;
+        return {
+            roll,
+            modifier,
+            total,
+            dc,
+            margin,
+            degree,
+            isNat20,
+            isNat1,
+            isHit: degree === 'success' || degree === 'critical-success',
+            isCrit: degree === 'critical-success'
+        };
     }
+
+    /**
+     * Roll damage dice with detailed breakdown
+     */
+    rollDamageDetailed(notation: string): DamageResult {
+        const match = notation.match(/^(\d+)d(\d+)(([+\-])(\d+))?$/i);
+        if (!match) {
+            throw new Error(`Invalid dice notation: ${notation}`);
+        }
+
+        const count = parseInt(match[1], 10);
+        const sides = parseInt(match[2], 10);
+        const modifierSign = match[4] || '+';
+        const modifierValue = match[5] ? parseInt(match[5], 10) : 0;
+        const modifier = modifierSign === '-' ? -modifierValue : modifierValue;
+
+        const rolls: number[] = [];
+        for (let i = 0; i < count; i++) {
+            rolls.push(this.rollDie(sides));
+        }
+
+        const diceTotal = rolls.reduce((sum, r) => sum + r, 0);
+        const total = diceTotal + modifier;
+
+        return {
+            notation,
+            rolls,
+            diceTotal,
+            modifier,
+            total
+        };
+    }
+}
+
+/**
+ * Detailed result of a d20 check
+ */
+export interface CheckResult {
+    roll: number;           // The raw d20 roll (1-20)
+    modifier: number;       // The modifier applied
+    total: number;          // roll + modifier
+    dc: number;             // The DC to beat
+    margin: number;         // total - dc (positive = success)
+    degree: 'critical-failure' | 'failure' | 'success' | 'critical-success';
+    isNat20: boolean;
+    isNat1: boolean;
+    isHit: boolean;         // success or critical-success
+    isCrit: boolean;        // critical-success
+}
+
+/**
+ * Detailed result of a damage roll
+ */
+export interface DamageResult {
+    notation: string;       // Original notation (e.g., "2d6+3")
+    rolls: number[];        // Individual die results
+    diceTotal: number;      // Sum of dice only
+    modifier: number;       // Flat modifier
+    total: number;          // Final damage total
 }

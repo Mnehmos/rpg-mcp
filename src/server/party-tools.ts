@@ -688,6 +688,10 @@ export async function handleMoveParty(args: unknown, _ctx: SessionContext) {
             parsed.poiId
         );
 
+        if (!updatedParty) {
+            throw new Error(`Failed to update party position: ${parsed.partyId}`);
+        }
+
         return {
             content: [{
                 type: 'text' as const,

@@ -20,6 +20,9 @@ interface PartyRow {
     created_at: string;
     updated_at: string;
     last_played_at: string | null;
+    position_x: number | null;
+    position_y: number | null;
+    current_poi: string | null;
 }
 
 interface PartyMemberRow {
