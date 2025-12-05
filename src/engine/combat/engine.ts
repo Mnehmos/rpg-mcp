@@ -18,6 +18,9 @@ export interface CombatParticipant {
     resistances?: string[];    // Damage types that deal half damage
     vulnerabilities?: string[]; // Damage types that deal double damage
     immunities?: string[];      // Damage types that deal no damage
+    // HIGH-003: Opportunity attack tracking
+    reactionUsed?: boolean;    // Whether reaction has been used this round
+    hasDisengaged?: boolean;   // Whether creature took disengage action this turn
     abilityScores?: {
         strength: number;
         dexterity: number;
@@ -525,9 +528,20 @@ export class CombatEngine {
     }
 
     /**
+     * HIGH-003: Reset reaction and disengage status at start of turn
+     */
+    private resetTurnResources(participant: CombatParticipant): void {
+        participant.reactionUsed = false;
+        participant.hasDisengaged = false;
+    }
+
+    /**
      * Process start-of-turn condition effects
      */
     private processStartOfTurnConditions(participant: CombatParticipant): void {
+        // HIGH-003: Reset reaction at start of turn
+        this.resetTurnResources(participant);
+
         for (const condition of [...participant.conditions]) {
             // Process ongoing effects
             if (condition.ongoingEffects) {
@@ -671,6 +685,170 @@ export class CombatEngine {
             const effects = CONDITION_EFFECTS[c.type];
             return effects.canTakeReactions === false;
         });
+    }
+
+    /**
+     * HIGH-003: Check if two positions are adjacent (within 1 tile - 8-directional)
+     */
+    isAdjacent(pos1: { x: number; y: number }, pos2: { x: number; y: number }): boolean {
+        const dx = Math.abs(pos1.x - pos2.x);
+        const dy = Math.abs(pos1.y - pos2.y);
+        return dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0);
+    }
+
+    /**
+     * HIGH-003: Get adjacent enemies that could make opportunity attacks
+     * @param moverId - The creature that is moving
+     * @param fromPos - Starting position
+     * @param toPos - Target position
+     * @returns Array of participants who can make opportunity attacks
+     */
+    getOpportunityAttackers(
+        moverId: string,
+        fromPos: { x: number; y: number },
+        toPos: { x: number; y: number }
+    ): CombatParticipant[] {
+        if (!this.state) return [];
+
+        const mover = this.state.participants.find(p => p.id === moverId);
+        if (!mover) return [];
+
+        // If mover has disengaged, no opportunity attacks are provoked
+        if (mover.hasDisengaged) return [];
+
+        const attackers: CombatParticipant[] = [];
+
+        for (const p of this.state.participants) {
+            // Skip self
+            if (p.id === moverId) continue;
+
+            // Skip defeated participants
+            if (p.hp <= 0) continue;
+
+            // Skip same faction (allies don't attack each other)
+            if (p.isEnemy === mover.isEnemy) continue;
+
+            // Skip if reaction already used
+            if (p.reactionUsed) continue;
+
+            // Skip if no position
+            if (!p.position) continue;
+
+            // Check if creature was adjacent to mover at start and is no longer adjacent at end
+            const wasAdjacent = this.isAdjacent(fromPos, p.position);
+            const stillAdjacent = this.isAdjacent(toPos, p.position);
+
+            // Opportunity attack triggers when leaving threatened square (was adjacent, now not)
+            if (wasAdjacent && !stillAdjacent) {
+                attackers.push(p);
+            }
+        }
+
+        return attackers;
+    }
+
+    /**
+     * HIGH-003: Execute an opportunity attack
+     * Uses simplified attack: d20 + attacker's initiative bonus vs target's initiative + 10
+     * Damage is fixed at 1d6 + 2 for simplicity
+     */
+    executeOpportunityAttack(
+        attackerId: string,
+        targetId: string
+    ): CombatActionResult {
+        if (!this.state) throw new Error('No active combat');
+
+        const attacker = this.state.participants.find(p => p.id === attackerId);
+        const target = this.state.participants.find(p => p.id === targetId);
+
+        if (!attacker) throw new Error(`Attacker ${attackerId} not found`);
+        if (!target) throw new Error(`Target ${targetId} not found`);
+
+        // Mark reaction as used
+        attacker.reactionUsed = true;
+
+        // Simple attack calculation: use initiative bonus as attack modifier
+        // AC approximation: 10 + initiative bonus (simple heuristic)
+        const attackBonus = attacker.initiativeBonus + 2; // Add a small bonus
+        const targetAC = 10 + (target.initiativeBonus > 0 ? Math.floor(target.initiativeBonus / 2) : 0);
+
+        // Fixed damage for opportunity attacks: 1d6 + 2
+        const baseDamage = this.rng.roll('1d6') + 2;
+
+        const hpBefore = target.hp;
+        const attackRoll = this.rng.checkDegreeDetailed(attackBonus, targetAC);
+
+        let damageDealt = 0;
+        if (attackRoll.isHit) {
+            damageDealt = attackRoll.isCrit ? baseDamage * 2 : baseDamage;
+            target.hp = Math.max(0, target.hp - damageDealt);
+        }
+
+        const defeated = target.hp <= 0;
+
+        // Build detailed breakdown
+        let breakdown = `⚡ OPPORTUNITY ATTACK by ${attacker.name}!\n`;
+        breakdown += `🎲 Attack Roll: d20(${attackRoll.roll}) + ${attackBonus} = ${attackRoll.total} vs AC ${targetAC}\n`;
+
+        if (attackRoll.isNat20) {
+            breakdown += `   ⭐ NATURAL 20!\n`;
+        } else if (attackRoll.isNat1) {
+            breakdown += `   💀 NATURAL 1!\n`;
+        }
+
+        breakdown += `   ${attackRoll.isHit ? '✅ HIT' : '❌ MISS'}`;
+
+        if (attackRoll.isHit) {
+            breakdown += attackRoll.isCrit ? ' (CRITICAL!)' : '';
+            breakdown += `\n\n💥 Damage: ${damageDealt}${attackRoll.isCrit ? ' (crit)' : ''}\n`;
+            breakdown += `   ${target.name}: ${hpBefore} → ${target.hp}/${target.maxHp} HP`;
+            if (defeated) {
+                breakdown += ` [DEFEATED]`;
+            }
+        }
+
+        const message = attackRoll.isHit
+            ? `OPPORTUNITY ATTACK HIT! ${attacker.name} strikes ${target.name} for ${damageDealt} damage`
+            : `OPPORTUNITY ATTACK MISS! ${attacker.name}'s attack misses ${target.name}`;
+
+        this.emitter?.publish('combat', {
+            type: 'opportunity_attack',
+            result: {
+                attacker: attacker.name,
+                target: target.name,
+                roll: attackRoll.roll,
+                total: attackRoll.total,
+                ac: targetAC,
+                hit: attackRoll.isHit,
+                crit: attackRoll.isCrit,
+                damage: damageDealt,
+                targetHp: target.hp
+            }
+        });
+
+        return {
+            type: 'attack',
+            actor: { id: attacker.id, name: attacker.name },
+            target: { id: target.id, name: target.name, hpBefore, hpAfter: target.hp, maxHp: target.maxHp },
+            attackRoll,
+            damage: damageDealt,
+            success: attackRoll.isHit,
+            defeated,
+            message,
+            detailedBreakdown: breakdown
+        };
+    }
+
+    /**
+     * HIGH-003: Mark a participant as having taken the disengage action
+     */
+    disengage(participantId: string): void {
+        if (!this.state) return;
+
+        const participant = this.state.participants.find(p => p.id === participantId);
+        if (participant) {
+            participant.hasDisengaged = true;
+        }
     }
 
     /**

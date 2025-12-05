@@ -164,6 +164,30 @@ function formatHealResult(result: CombatActionResult): string {
 }
 
 /**
+ * HIGH-003: Format disengage result for display
+ */
+function formatDisengageResult(actorName: string): string {
+    let output = `\n┌─────────────────────────────────────────┐\n`;
+    output += `│ 🏃 DISENGAGE ACTION\n`;
+    output += `└─────────────────────────────────────────┘\n\n`;
+    output += `${actorName} takes the Disengage action.\n`;
+    output += `Movement this turn will not provoke opportunity attacks.\n`;
+    output += `\n→ Call advance_turn to proceed (or move first)`;
+    return output;
+}
+
+/**
+ * HIGH-003: Format opportunity attack result for display
+ */
+function formatOpportunityAttackResult(result: CombatActionResult): string {
+    let output = `\n┌─────────────────────────────────────────┐\n`;
+    output += `│ ⚡ OPPORTUNITY ATTACK\n`;
+    output += `└─────────────────────────────────────────┘\n\n`;
+    output += result.detailedBreakdown;
+    return output;
+}
+
+/**
  * CRIT-003: Format a move result for display
  */
 function formatMoveResult(
@@ -285,10 +309,15 @@ Examples:
   "action": "move",
   "actorId": "hero-1",
   "targetPosition": { "x": 5, "y": 3 }
+}
+
+{
+  "action": "disengage",
+  "actorId": "hero-1"
 }`,
         inputSchema: z.object({
             encounterId: z.string().describe('The ID of the encounter'),
-            action: z.enum(['attack', 'heal', 'move']),
+            action: z.enum(['attack', 'heal', 'move', 'disengage']),
             actorId: z.string(),
             targetId: z.string().optional().describe('Target ID for attack/heal actions'),
             attackBonus: z.number().int().optional(),
@@ -491,6 +520,33 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
 
         result = engine.executeHeal(parsed.actorId, parsed.targetId, parsed.amount);
         output = formatHealResult(result);
+    } else if (parsed.action === 'disengage') {
+        // HIGH-003: Disengage action - prevents opportunity attacks
+        const currentState = engine.getState();
+        if (!currentState) {
+            throw new Error('No combat state');
+        }
+
+        const actor = currentState.participants.find(p => p.id === parsed.actorId);
+        if (!actor) {
+            throw new Error(`Actor ${parsed.actorId} not found`);
+        }
+
+        // Mark as disengaged using engine method
+        engine.disengage(parsed.actorId);
+
+        output = formatDisengageResult(actor.name);
+
+        // Create result for consistency
+        result = {
+            type: 'attack', // Placeholder type
+            success: true,
+            actor: { id: actor.id, name: actor.name },
+            target: { id: actor.id, name: actor.name, hpBefore: actor.hp, hpAfter: actor.hp, maxHp: actor.maxHp },
+            defeated: false,
+            message: `${actor.name} disengages`,
+            detailedBreakdown: output
+        };
     } else if (parsed.action === 'move') {
         // CRIT-003: Spatial movement with collision checking
         if (!parsed.targetPosition) {
@@ -514,57 +570,107 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             (actor as any).position = parsed.targetPosition;
             output = formatMoveResult(actor.name, undefined, parsed.targetPosition, true, null);
         } else {
-            // Build obstacle set from other participants and terrain
-            const obstacles = new Set<string>();
+            // HIGH-003: Check for opportunity attacks BEFORE moving
+            const opportunityAttackers = engine.getOpportunityAttackers(
+                parsed.actorId,
+                actorPos,
+                parsed.targetPosition
+            );
 
-            // Add other participant positions as obstacles
-            for (const p of currentState.participants) {
-                if (p.id !== parsed.actorId && (p as any).position) {
-                    const pos = (p as any).position;
-                    obstacles.add(`${pos.x},${pos.y}`);
+            // Execute any triggered opportunity attacks
+            let opportunityAttackOutput = '';
+            for (const attacker of opportunityAttackers) {
+                const oaResult = engine.executeOpportunityAttack(attacker.id, parsed.actorId);
+                opportunityAttackOutput += formatOpportunityAttackResult(oaResult) + '\n';
+
+                // If the mover is defeated by an opportunity attack, they can't complete the move
+                if (oaResult.defeated) {
+                    output = opportunityAttackOutput;
+                    output += `\n${actor.name} was defeated while attempting to move and cannot complete the movement!`;
+                    result = {
+                        type: 'attack',
+                        success: false,
+                        actor: { id: actor.id, name: actor.name },
+                        target: { id: actor.id, name: actor.name, hpBefore: oaResult.target.hpBefore, hpAfter: oaResult.target.hpAfter, maxHp: actor.maxHp },
+                        defeated: true,
+                        message: `${actor.name} defeated by opportunity attack`,
+                        detailedBreakdown: output
+                    };
+                    // Skip to saving state
+                    break;
                 }
             }
 
-            // Add terrain obstacles if available
-            const terrain = (currentState as any).terrain;
-            if (terrain?.obstacles) {
-                for (const obs of terrain.obstacles) {
-                    obstacles.add(obs);
+            // Only continue with move if not defeated
+            const updatedActor = currentState.participants.find(p => p.id === parsed.actorId);
+            if (updatedActor && updatedActor.hp > 0) {
+                // Build obstacle set from other participants and terrain
+                const obstacles = new Set<string>();
+
+                // Add other participant positions as obstacles
+                for (const p of currentState.participants) {
+                    if (p.id !== parsed.actorId && (p as any).position) {
+                        const pos = (p as any).position;
+                        obstacles.add(`${pos.x},${pos.y}`);
+                    }
                 }
-            }
 
-            // Check if destination is blocked
-            const destKey = `${parsed.targetPosition.x},${parsed.targetPosition.y}`;
-            if (obstacles.has(destKey)) {
-                output = formatMoveResult(actor.name, actorPos, parsed.targetPosition, false, 'Destination is blocked');
-            } else {
-                // Use spatial engine to find path
-                const spatial = new SpatialEngine();
-                const path = spatial.findPath(
-                    { x: actorPos.x, y: actorPos.y },
-                    { x: parsed.targetPosition.x, y: parsed.targetPosition.y },
-                    obstacles
-                );
+                // Add terrain obstacles if available
+                const terrain = (currentState as any).terrain;
+                if (terrain?.obstacles) {
+                    for (const obs of terrain.obstacles) {
+                        obstacles.add(obs);
+                    }
+                }
 
-                if (path === null) {
-                    // No valid path
-                    output = formatMoveResult(actor.name, actorPos, parsed.targetPosition, false, 'No valid path - blocked by obstacles');
+                // Check if destination is blocked
+                const destKey = `${parsed.targetPosition.x},${parsed.targetPosition.y}`;
+                if (obstacles.has(destKey)) {
+                    output = opportunityAttackOutput + formatMoveResult(actor.name, actorPos, parsed.targetPosition, false, 'Destination is blocked');
                 } else {
-                    // Move successful - update position
-                    (actor as any).position = parsed.targetPosition;
-                    output = formatMoveResult(actor.name, actorPos, parsed.targetPosition, true, null, path.length - 1);
+                    // Use spatial engine to find path
+                    const spatial = new SpatialEngine();
+                    const path = spatial.findPath(
+                        { x: actorPos.x, y: actorPos.y },
+                        { x: parsed.targetPosition.x, y: parsed.targetPosition.y },
+                        obstacles
+                    );
+
+                    if (path === null) {
+                        // No valid path
+                        output = opportunityAttackOutput + formatMoveResult(actor.name, actorPos, parsed.targetPosition, false, 'No valid path - blocked by obstacles');
+                    } else {
+                        // Move successful - update position
+                        (updatedActor as any).position = parsed.targetPosition;
+                        output = opportunityAttackOutput + formatMoveResult(actor.name, actorPos, parsed.targetPosition, true, null, path.length - 1);
+                    }
                 }
+
+                // Create result for consistency
+                result = {
+                    type: 'attack',
+                    success: output.includes('moved'),
+                    actor: { id: actor.id, name: actor.name },
+                    target: { id: actor.id, name: actor.name, hpBefore: actor.hp, hpAfter: updatedActor.hp, maxHp: actor.maxHp },
+                    defeated: updatedActor.hp <= 0,
+                    message: output.includes('moved') ? `${actor.name} moved` : `${actor.name} could not move`,
+                    detailedBreakdown: output
+                };
             }
         }
 
-        // Create dummy result for consistency
-        result = {
-            success: output.includes('moved'),
-            actor: { id: actor.id, name: actor.name, hp: actor.hp, maxHp: actor.maxHp },
-            target: { id: actor.id, name: actor.name, hp: actor.hp, maxHp: actor.maxHp },
-            defeated: false,
-            detailedBreakdown: output
-        };
+        // Create dummy result if not set (for the case where no position was set initially)
+        if (!result) {
+            result = {
+                type: 'attack',
+                success: output.includes('moved') || output.includes('placed'),
+                actor: { id: actor.id, name: actor.name },
+                target: { id: actor.id, name: actor.name, hpBefore: actor.hp, hpAfter: actor.hp, maxHp: actor.maxHp },
+                defeated: false,
+                message: `${actor.name} moved`,
+                detailedBreakdown: output
+            };
+        }
     } else {
         throw new Error(`Unknown action: ${parsed.action}`);
     }
