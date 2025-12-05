@@ -871,6 +871,9 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             } : { id: 'none', name: 'none', hpBefore: 0, hpAfter: 0, maxHp: 0 },
             defeated: target ? target.hp <= 0 : false,
             message: `${actor.name} cast ${spell.name}`,
+            // CRIT-006: Include spell damage/healing in result for testing and frontend
+            damage: resolution.damage,
+            healAmount: resolution.healing,
             detailedBreakdown: output + `\n[SPELL: ${spell.name}, SLOT: ${effectiveSlotLevel > 0 ? effectiveSlotLevel : 'cantrip'}, DMG: ${resolution.damage || 0}, HEAL: ${resolution.healing || 0}]`
         };
     } else {
