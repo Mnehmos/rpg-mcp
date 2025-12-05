@@ -15,8 +15,68 @@ import { PubSub } from '../engine/pubsub.js';
 import { registerEventTools } from './events.js';
 import { AuditLogger } from './audit.js';
 import { withSession } from './types.js';
+import { closeDb, getDbPath } from '../storage/index.js';
+
+/**
+ * Setup graceful shutdown handlers to ensure database is properly closed.
+ */
+function setupShutdownHandlers(): void {
+    let isShuttingDown = false;
+
+    const shutdown = (signal: string) => {
+        if (isShuttingDown) return;
+        isShuttingDown = true;
+
+        console.error(`[Server] Received ${signal}, shutting down gracefully...`);
+
+        try {
+            closeDb();
+            console.error('[Server] Shutdown complete');
+            process.exit(0);
+        } catch (e) {
+            console.error('[Server] Error during shutdown:', (e as Error).message);
+            process.exit(1);
+        }
+    };
+
+    // Handle various termination signals
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGHUP', () => shutdown('SIGHUP'));
+
+    // Handle Windows-specific events
+    if (process.platform === 'win32') {
+        // On Windows, SIGINT is emulated when Ctrl+C is pressed
+        process.on('SIGBREAK', () => shutdown('SIGBREAK'));
+    }
+
+    // Handle uncaught exceptions and unhandled rejections
+    process.on('uncaughtException', (error) => {
+        console.error('[Server] Uncaught exception:', error);
+        shutdown('uncaughtException');
+    });
+
+    process.on('unhandledRejection', (reason) => {
+        console.error('[Server] Unhandled rejection:', reason);
+        shutdown('unhandledRejection');
+    });
+
+    // Handle normal exit
+    process.on('exit', (code) => {
+        if (!isShuttingDown) {
+            console.error(`[Server] Process exiting with code ${code}`);
+            closeDb();
+        }
+    });
+}
 
 async function main() {
+    // Setup graceful shutdown handlers first
+    setupShutdownHandlers();
+
+    // Log database path for debugging
+    console.error(`[Server] Database path: ${getDbPath()}`);
+
     // Create server instance
     const server = new McpServer({
         name: 'rpg-mcp',
