@@ -401,10 +401,58 @@ function runMigrations(db: Database.Database) {
 
   // Set safe default positions for existing parties (map center)
   db.exec(`
-    UPDATE parties 
-    SET position_x = 50, position_y = 50 
+    UPDATE parties
+    SET position_x = 50, position_y = 50
     WHERE position_x IS NULL;
   `);
+
+  // CRIT-002/006: Add spellcasting columns to characters table
+  const hasCharacterClass = charColumns.some(col => col.name === 'character_class');
+  const hasSpellSlots = charColumns.some(col => col.name === 'spell_slots');
+  const hasPactMagicSlots = charColumns.some(col => col.name === 'pact_magic_slots');
+  const hasKnownSpells = charColumns.some(col => col.name === 'known_spells');
+  const hasPreparedSpells = charColumns.some(col => col.name === 'prepared_spells');
+  const hasCantripsKnown = charColumns.some(col => col.name === 'cantrips_known');
+  const hasMaxSpellLevel = charColumns.some(col => col.name === 'max_spell_level');
+  const hasConcentratingOn = charColumns.some(col => col.name === 'concentrating_on');
+  const hasConditions = charColumns.some(col => col.name === 'conditions');
+
+  if (!hasCharacterClass) {
+    console.error('[Migration] Adding character_class column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN character_class TEXT DEFAULT 'fighter';`);
+  }
+  if (!hasSpellSlots) {
+    console.error('[Migration] Adding spell_slots column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN spell_slots TEXT;`);
+  }
+  if (!hasPactMagicSlots) {
+    console.error('[Migration] Adding pact_magic_slots column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN pact_magic_slots TEXT;`);
+  }
+  if (!hasKnownSpells) {
+    console.error('[Migration] Adding known_spells column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN known_spells TEXT DEFAULT '[]';`);
+  }
+  if (!hasPreparedSpells) {
+    console.error('[Migration] Adding prepared_spells column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN prepared_spells TEXT DEFAULT '[]';`);
+  }
+  if (!hasCantripsKnown) {
+    console.error('[Migration] Adding cantrips_known column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN cantrips_known TEXT DEFAULT '[]';`);
+  }
+  if (!hasMaxSpellLevel) {
+    console.error('[Migration] Adding max_spell_level column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN max_spell_level INTEGER DEFAULT 0;`);
+  }
+  if (!hasConcentratingOn) {
+    console.error('[Migration] Adding concentrating_on column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN concentrating_on TEXT;`);
+  }
+  if (!hasConditions) {
+    console.error('[Migration] Adding conditions column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN conditions TEXT DEFAULT '[]';`);
+  }
 }
 
 function createPostMigrationIndexes(db: Database.Database) {
