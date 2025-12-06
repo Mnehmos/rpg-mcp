@@ -26,6 +26,29 @@ export const ExitSchema = z.object({
 
 export type Exit = z.infer<typeof ExitSchema>;
 
+// PHASE-2: Export BiomeType and Atmospheric for social hearing mechanics
+export const BiomeTypeSchema = z.enum([
+    'forest',
+    'mountain',
+    'urban',
+    'dungeon',
+    'coastal',
+    'cavern',
+    'divine',
+    'arcane'
+]);
+export type BiomeType = z.infer<typeof BiomeTypeSchema>;
+
+export const AtmosphericSchema = z.enum([
+    'DARKNESS',
+    'FOG',
+    'ANTIMAGIC',
+    'SILENCE',
+    'BRIGHT',
+    'MAGICAL'
+]);
+export type Atmospheric = z.infer<typeof AtmosphericSchema>;
+
 /**
  * RoomNode represents a persistent location in the world
  * Rooms are semantic locations (tavern, forest clearing, dungeon chamber)
@@ -45,26 +68,11 @@ export const RoomNodeSchema = z.object({
         .refine((s) => s.trim().length >= 10, 'Description must have at least 10 non-whitespace characters'),
 
     // World context
-    biomeContext: z.enum([
-        'forest',
-        'mountain',
-        'urban',
-        'dungeon',
-        'coastal',
-        'cavern',
-        'divine',
-        'arcane'
-    ]).describe('Linked to src/engine/worldgen biome definitions'),
+    biomeContext: BiomeTypeSchema
+        .describe('Linked to src/engine/worldgen biome definitions'),
 
     // Atmospheric effects
-    atmospherics: z.array(z.enum([
-        'DARKNESS',
-        'FOG',
-        'ANTIMAGIC',
-        'SILENCE',
-        'BRIGHT',
-        'MAGICAL'
-    ])).default([])
+    atmospherics: z.array(AtmosphericSchema).default([])
         .describe('Environmental effects that modify perception and abilities'),
 
     // Connections

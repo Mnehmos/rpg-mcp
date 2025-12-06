@@ -12,7 +12,7 @@ import { TurnManagementTools, handleTurnManagementTool } from './turn-management
 import { SecretTools, handleCreateSecret, handleGetSecret, handleListSecrets, handleUpdateSecret, handleDeleteSecret, handleRevealSecret, handleCheckRevealConditions, handleGetSecretsForContext, handleCheckForLeaks } from './secret-tools.js';
 import { PartyTools, handleCreateParty, handleGetParty, handleListParties, handleUpdateParty, handleDeleteParty, handleAddPartyMember, handleRemovePartyMember, handleUpdatePartyMember, handleSetPartyLeader, handleSetActiveCharacter, handleGetPartyMembers, handleGetPartyContext, handleGetUnassignedCharacters, handleMoveParty, handleGetPartyPosition, handleGetPartiesInRegion } from './party-tools.js';
 import { RestTools, handleTakeLongRest, handleTakeShortRest } from './rest-tools.js';
-import { NpcMemoryTools, handleGetNpcRelationship, handleUpdateNpcRelationship, handleRecordConversationMemory, handleGetConversationHistory, handleGetRecentInteractions, handleGetNpcContext } from './npc-memory-tools.js';
+import { NpcMemoryTools, handleGetNpcRelationship, handleUpdateNpcRelationship, handleRecordConversationMemory, handleGetConversationHistory, handleGetRecentInteractions, handleGetNpcContext, handleInteractSocially } from './npc-memory-tools.js';
 import { TheftTools, handleStealItem, handleCheckItemStolen, handleCheckStolenItemsOnCharacter, handleCheckItemRecognition, handleSellToFence, handleRegisterFence, handleReportTheft, handleAdvanceHeatDecay, handleGetFence, handleListFences } from './theft-tools.js';
 import { CorpseTools, handleGetCorpse, handleGetCorpseByCharacter, handleListCorpsesInEncounter, handleListCorpsesNearby, handleLootCorpse, handleHarvestCorpse, handleCreateCorpse, handleGenerateLoot, handleGetCorpseInventory, handleCreateLootTable, handleGetLootTable, handleListLootTables, handleAdvanceCorpseDecay, handleCleanupCorpses } from './corpse-tools.js';
 import { ImprovisationTools, handleResolveImprovisedStunt, handleApplyCustomEffect, handleGetCustomEffects, handleRemoveCustomEffect, handleProcessEffectTriggers, handleAdvanceEffectDurations, handleAttemptArcaneSynthesis, handleGetSynthesizedSpells } from './improvisation-tools.js';
@@ -800,6 +800,13 @@ async function main() {
         NpcMemoryTools.GET_NPC_CONTEXT.description,
         NpcMemoryTools.GET_NPC_CONTEXT.inputSchema.extend({ sessionId: z.string().optional() }).shape,
         auditLogger.wrapHandler(NpcMemoryTools.GET_NPC_CONTEXT.name, withSession(NpcMemoryTools.GET_NPC_CONTEXT.inputSchema, handleGetNpcContext))
+    );
+
+    server.tool(
+        NpcMemoryTools.INTERACT_SOCIALLY.name,
+        NpcMemoryTools.INTERACT_SOCIALLY.description,
+        NpcMemoryTools.INTERACT_SOCIALLY.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(NpcMemoryTools.INTERACT_SOCIALLY.name, withSession(NpcMemoryTools.INTERACT_SOCIALLY.inputSchema, handleInteractSocially))
     );
 
     // Register Spatial Tools (PHASE-1: Spatial Graph System)

@@ -31,7 +31,7 @@ export interface OpposedRollResult {
  * @param abilityScore - Ability score (1-30, typically 3-20)
  * @returns Modifier (-5 to +10 typically)
  */
-function getModifier(abilityScore: number): number {
+export function getModifier(abilityScore: number): number {
     return Math.floor((abilityScore - 10) / 2);
 }
 

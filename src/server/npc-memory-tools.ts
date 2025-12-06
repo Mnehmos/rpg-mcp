@@ -2,6 +2,11 @@ import { z } from 'zod';
 import { getDb } from '../storage/index.js';
 import { NpcMemoryRepository, Familiarity, Disposition, Importance } from '../storage/repos/npc-memory.repo.js';
 import { SessionContext } from './types.js';
+import { CharacterRepository } from '../storage/repos/character.repo.js';
+import { SpatialRepository } from '../storage/repos/spatial.repo.js';
+import { calculateHearingRadius } from '../engine/social/hearing.js';
+import { rollStealthVsPerception, isDeafened, getEnvironmentModifier } from '../engine/social/stealth-perception.js';
+import { VolumeLevel } from '../engine/social/hearing.js';
 
 /**
  * HIGH-004: NPC Memory Tools
@@ -109,6 +114,31 @@ Use this to inject context into LLM prompts for NPC dialogue.`,
             npcId: z.string().describe('ID of the NPC'),
             memoryLimit: z.number().int().positive().default(5)
                 .describe('Maximum number of memories to include')
+        })
+    },
+
+    // PHASE-2: Social Hearing Mechanics
+    INTERACT_SOCIALLY: {
+        name: 'interact_socially',
+        description: `Record a social interaction (conversation, whisper, shout) with spatial awareness.
+Automatically handles:
+- Hearing range calculations based on volume and environment
+- Stealth vs Perception rolls for eavesdropping detection
+- Conversation memory recording for all who can hear
+
+Volume levels:
+- WHISPER: Short range, intimate conversations (5-15 feet depending on environment)
+- TALK: Normal conversation range (15-100 feet depending on environment)
+- SHOUT: Long range, alerts everyone nearby (40-500 feet depending on environment)
+
+The speaker's stealth check is opposed by each listener's perception check.
+If listener wins, they overhear the conversation. Target always hears full content.`,
+        inputSchema: z.object({
+            speakerId: z.string().describe('ID of the character speaking'),
+            targetId: z.string().optional().describe('ID of the intended recipient (optional for broadcasts)'),
+            content: z.string().min(1).describe('What is being said'),
+            volume: z.enum(['WHISPER', 'TALK', 'SHOUT']).describe('Volume level of speech'),
+            intent: z.string().optional().describe('Social intent: gossip, interrogate, negotiate, threaten, etc.')
         })
     }
 } as const;
@@ -284,6 +314,170 @@ export async function handleGetNpcContext(args: unknown, _ctx: SessionContext) {
         content: [{
             type: 'text' as const,
             text: JSON.stringify(context, null, 2)
+        }]
+    };
+}
+
+export async function handleInteractSocially(args: unknown, _ctx: SessionContext) {
+    const parsed = NpcMemoryTools.INTERACT_SOCIALLY.inputSchema.parse(args);
+    const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+    const charRepo = new CharacterRepository(db);
+    const spatialRepo = new SpatialRepository(db);
+    const memoryRepo = new NpcMemoryRepository(db);
+
+    // 1. Validate speaker exists
+    const speaker = charRepo.findById(parsed.speakerId);
+    if (!speaker) {
+        throw new Error(`Speaker with ID ${parsed.speakerId} not found`);
+    }
+
+    // 2. Check speaker is in a room
+    if (!speaker.currentRoomId) {
+        throw new Error(`Speaker ${speaker.name} is not in any room`);
+    }
+
+    const room = spatialRepo.findById(speaker.currentRoomId);
+    if (!room) {
+        throw new Error(`Room ${speaker.currentRoomId} not found`);
+    }
+
+    // 3. Validate target if specified
+    let target = null;
+    if (parsed.targetId) {
+        target = charRepo.findById(parsed.targetId);
+        if (!target) {
+            throw new Error(`Target with ID ${parsed.targetId} not found`);
+        }
+    }
+
+    // 4. Calculate hearing radius based on volume and environment
+    const hearingRadius = calculateHearingRadius({
+        volume: parsed.volume as VolumeLevel,
+        biomeContext: room.biomeContext,
+        atmospherics: room.atmospherics
+    });
+
+    // 5. Get environment modifier for perception checks
+    const envModifier = getEnvironmentModifier(room.atmospherics);
+
+    // 6. Find all potential listeners in the same room (excluding speaker)
+    const potentialListeners = room.entityIds
+        .filter(id => id !== parsed.speakerId)
+        .map(id => charRepo.findById(id))
+        .filter((char): char is NonNullable<typeof char> => char !== null);
+
+    // 7. Track who hears what
+    const hearingResults: Array<{
+        listenerId: string;
+        listenerName: string;
+        heardFully: boolean;
+        opposedRoll?: {
+            speakerRoll: number;
+            speakerTotal: number;
+            listenerRoll: number;
+            listenerTotal: number;
+            success: boolean;
+            margin: number;
+        };
+    }> = [];
+
+    // 8. Target always hears full content (no roll needed)
+    if (target && target.currentRoomId === room.id) {
+        hearingResults.push({
+            listenerId: target.id,
+            listenerName: target.name,
+            heardFully: true
+        });
+
+        // Record full conversation for target
+        memoryRepo.recordMemory({
+            characterId: target.id,
+            npcId: speaker.id,
+            summary: `${speaker.name} said (${parsed.volume.toLowerCase()}): "${parsed.content}"${parsed.intent ? ` [Intent: ${parsed.intent}]` : ''}`,
+            importance: parsed.volume === 'SHOUT' ? 'high' : 'medium',
+            topics: parsed.intent ? [parsed.intent] : []
+        });
+    }
+
+    // 9. For each other listener, roll Stealth vs Perception
+    const eavesdroppers = potentialListeners.filter(listener =>
+        listener.id !== parsed.targetId && !isDeafened(listener)
+    );
+
+    for (const listener of eavesdroppers) {
+        // Perform opposed roll
+        const roll = rollStealthVsPerception(speaker, listener, envModifier);
+
+        if (roll.success) {
+            // Listener overheard the conversation
+            hearingResults.push({
+                listenerId: listener.id,
+                listenerName: listener.name,
+                heardFully: false,
+                opposedRoll: {
+                    speakerRoll: roll.speakerRoll,
+                    speakerTotal: roll.speakerTotal,
+                    listenerRoll: roll.listenerRoll,
+                    listenerTotal: roll.listenerTotal,
+                    success: roll.success,
+                    margin: roll.margin
+                }
+            });
+
+            // Record eavesdropped conversation (partial content)
+            memoryRepo.recordMemory({
+                characterId: listener.id,
+                npcId: speaker.id,
+                summary: `Overheard ${speaker.name} ${parsed.volume === 'WHISPER' ? 'whispering' : parsed.volume === 'SHOUT' ? 'shouting' : 'talking'}${target ? ` to ${target.name}` : ''} about something${parsed.intent ? ` (${parsed.intent})` : ''}`,
+                importance: parsed.volume === 'SHOUT' ? 'medium' : 'low',
+                topics: parsed.intent ? [parsed.intent, 'eavesdropped'] : ['eavesdropped']
+            });
+        } else {
+            // Listener failed to overhear
+            hearingResults.push({
+                listenerId: listener.id,
+                listenerName: listener.name,
+                heardFully: false,
+                opposedRoll: {
+                    speakerRoll: roll.speakerRoll,
+                    speakerTotal: roll.speakerTotal,
+                    listenerRoll: roll.listenerRoll,
+                    listenerTotal: roll.listenerTotal,
+                    success: roll.success,
+                    margin: roll.margin
+                }
+            });
+        }
+    }
+
+    // 10. Return results
+    return {
+        content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+                success: true,
+                speaker: {
+                    id: speaker.id,
+                    name: speaker.name
+                },
+                target: target ? {
+                    id: target.id,
+                    name: target.name,
+                    heard: true
+                } : null,
+                volume: parsed.volume,
+                hearingRadius,
+                room: {
+                    id: room.id,
+                    name: room.name,
+                    biome: room.biomeContext,
+                    atmospherics: room.atmospherics
+                },
+                listeners: hearingResults,
+                totalListeners: hearingResults.length,
+                whoHeard: hearingResults.filter(r => r.heardFully || r.opposedRoll?.success).length,
+                whoMissed: hearingResults.filter(r => !r.heardFully && !r.opposedRoll?.success).length
+            }, null, 2)
         }]
     };
 }
