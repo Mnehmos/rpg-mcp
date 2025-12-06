@@ -3,8 +3,8 @@
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)]()
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-659%20passing-brightgreen.svg)]()
-[![Tools](https://img.shields.io/badge/MCP%20tools-122-blue.svg)]()
+[![Tests](https://img.shields.io/badge/tests-746%20passing-brightgreen.svg)]()
+[![Tools](https://img.shields.io/badge/MCP%20tools-135-blue.svg)]()
 
 **A deterministic, schema-driven, multi-world simulation engine for embodied AI agents.**
 
@@ -12,10 +12,10 @@ RPG-MCP is not a game—it's a **world kernel**. It provides the physics, constr
 
 ---
 
-## What's New (December 2025)
+## What's New (December 6, 2025)
 
-- **122 MCP Tools** - Complete RPG mechanics coverage
-- **659 Passing Tests** - Comprehensive test coverage
+- **135 MCP Tools** - Complete RPG mechanics coverage (up from 122)
+- **746 Passing Tests** - Comprehensive test coverage (up from 659)
 - **Full Spellcasting System** - 15+ SRD spells, class progression, slot tracking
 - **Theft & Fence System** - Heat decay, witness tracking, black market economy
 - **Corpse & Loot System** - Decay states, harvestable resources, loot tables
@@ -23,6 +23,9 @@ RPG-MCP is not a game—it's a **world kernel**. It provides the physics, constr
 - **Improvisation Engine** - Rule of Cool stunts, custom effects, arcane synthesis
 - **Legendary Creatures** - Lair actions, legendary resistances, boss mechanics
 - **Death Saving Throws** - Full D&D 5e rules with stabilization
+- **Spatial Navigation** - Room networks, terrain-aware POI placement
+- **Expanded Party System** - World positioning, region queries
+- **Currency System** - Gold/silver/copper with auto-conversion
 
 ---
 
@@ -203,7 +206,7 @@ git clone https://github.com/Mnehmos/rpg-mcp.git
 cd rpg-mcp
 npm install
 npm run build
-npm test  # 659 tests should pass
+npm test  # 746 tests should pass
 ```
 
 To build binaries yourself:
@@ -241,7 +244,7 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 
 ---
 
-## MCP Tools Reference (122 Tools)
+## MCP Tools Reference (135 Tools)
 
 ### World Management (12 tools)
 | Tool | Description |
@@ -259,6 +262,12 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 | `preview_map_patch` | Dry-run of patch |
 | `update_world_environment` | Time, weather, season |
 
+### POI Location Tools (2 tools)
+| Tool | Description |
+|------|-------------|
+| `find_valid_poi_location` | Terrain-aware placement for points of interest |
+| `suggest_poi_locations` | Suggest multiple valid POI locations |
+
 ### Character Management (5 tools)
 | Tool | Description |
 |------|-------------|
@@ -268,7 +277,7 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 | `list_characters` | List all characters |
 | `delete_character` | Remove from DB |
 
-### Inventory & Items (14 tools)
+### Inventory & Items (15 tools)
 | Tool | Description |
 |------|-------------|
 | `create_item_template` | Define item types |
@@ -285,6 +294,7 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 | `unequip_item` | Return to inventory |
 | `get_inventory` | Basic inventory list |
 | `get_inventory_detailed` | Full item info, sorted |
+| `transfer_currency` | Transfer gold/silver/copper with auto-conversion |
 
 ### Combat & Encounters (7 tools)
 | Tool | Description |
@@ -341,7 +351,7 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 | `advance_corpse_decay` | Process decay |
 | `cleanup_corpses` | Remove decayed corpses |
 
-### NPC Memory System (6 tools)
+### NPC Memory System (7 tools)
 | Tool | Description |
 |------|-------------|
 | `get_npc_relationship` | Get relationship status |
@@ -350,6 +360,7 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 | `get_conversation_history` | Get memories with NPC |
 | `get_recent_interactions` | Recent memories across NPCs |
 | `get_npc_context` | Full context for LLM injection |
+| `interact_socially` | PHASE-2: Spatial-aware conversations |
 
 ### Improvisation System (8 tools)
 | Tool | Description |
@@ -388,19 +399,33 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 | `get_secrets_for_context` | Format for LLM injection |
 | `check_for_leaks` | Scan text for accidental reveals |
 
-### Party System (10 tools)
+### Party System (17 tools)
 | Tool | Description |
 |------|-------------|
 | `create_party` | Create adventuring party |
 | `get_party` | Get party details |
 | `list_parties` | All parties |
+| `update_party` | Modify party properties |
 | `delete_party` | Remove party |
 | `add_party_member` | Add character to party |
 | `remove_party_member` | Remove from party |
+| `update_party_member` | Modify party member role |
 | `set_party_leader` | Change leadership |
-| `move_party` | Move entire party |
-| `get_party_position` | Party location |
+| `set_active_character` | Set active PC |
+| `get_party_members` | Get members with details |
 | `get_party_context` | Party summary for LLM |
+| `get_unassigned_characters` | Characters not in a party |
+| `move_party` | Move entire party on world map |
+| `get_party_position` | Party location |
+| `get_parties_in_region` | Parties in specific region |
+
+### Spatial Navigation (4 tools)
+| Tool | Description |
+|------|-------------|
+| `look_at_surroundings` | Observe current location details |
+| `generate_room_node` | Create room in dungeon network |
+| `get_room_exits` | List exits from current room |
+| `move_character_to_room` | Move character between rooms |
 
 ### Math & Dice (5 tools)
 | Tool | Description |
@@ -476,8 +501,8 @@ Fork worlds, run thousands of parallel scenarios, collect structured action/outc
 
 ```bash
 npm test
-# 659 tests passing
-# 81 test files
+# 746 tests passing
+# 85 test files
 # Coverage across all major systems
 ```
 

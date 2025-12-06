@@ -1,8 +1,9 @@
 # RPG-MCP - Claude Code Instructions
 
 ## This Repository
-The backend game engine for Quest Keeper AI. 80+ MCP tools for RPG mechanics.
+The backend game engine for Quest Keeper AI. **135 MCP tools** for complete RPG mechanics.
 **Philosophy:** "LLM describes, engine validates" - Database is source of truth.
+**Status:** Alpha (90% complete) - 746 tests passing, 85 test files, MCP Protocol fully integrated
 
 ## ⚠️ FIRST: Read Agents/README.md
 Before ANY work, review the Agents/ folder for context and known issues.
