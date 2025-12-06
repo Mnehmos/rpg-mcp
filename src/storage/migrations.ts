@@ -453,6 +453,69 @@ export function migrate(db: Database.Database) {
   );
 
   CREATE INDEX IF NOT EXISTS idx_loot_tables_name ON loot_tables(name);
+
+  -- IMPROVISATION SYSTEMS: Custom Effects Table
+  -- Tracks divine boons, curses, transformations, and player-invented conditions
+  CREATE TABLE IF NOT EXISTS custom_effects(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id TEXT NOT NULL,
+    target_type TEXT NOT NULL CHECK (target_type IN ('character', 'npc')),
+    name TEXT NOT NULL,
+    description TEXT,
+    source_type TEXT NOT NULL CHECK (source_type IN ('divine', 'arcane', 'natural', 'cursed', 'psionic', 'unknown')),
+    source_entity_id TEXT,
+    source_entity_name TEXT,
+    category TEXT NOT NULL CHECK (category IN ('boon', 'curse', 'neutral', 'transformative')),
+    power_level INTEGER NOT NULL CHECK (power_level BETWEEN 1 AND 5),
+    mechanics TEXT NOT NULL DEFAULT '[]', -- JSON array of mechanic objects
+    duration_type TEXT NOT NULL CHECK (duration_type IN ('rounds', 'minutes', 'hours', 'days', 'permanent', 'until_removed')),
+    duration_value INTEGER,
+    rounds_remaining INTEGER,
+    triggers TEXT NOT NULL DEFAULT '[]', -- JSON array of trigger objects
+    removal_conditions TEXT NOT NULL DEFAULT '[]', -- JSON array of removal condition objects
+    stackable INTEGER NOT NULL DEFAULT 0, -- boolean
+    max_stacks INTEGER NOT NULL DEFAULT 1,
+    current_stacks INTEGER NOT NULL DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 1, -- boolean
+    created_at TEXT NOT NULL,
+    expires_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_custom_effects_target ON custom_effects(target_id, target_type);
+  CREATE INDEX IF NOT EXISTS idx_custom_effects_active ON custom_effects(is_active);
+  CREATE INDEX IF NOT EXISTS idx_custom_effects_name ON custom_effects(name);
+
+  -- IMPROVISATION SYSTEMS: Synthesized Spells Table
+  -- Tracks spells permanently learned through Arcane Synthesis mastery
+  CREATE TABLE IF NOT EXISTS synthesized_spells(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    level INTEGER NOT NULL CHECK (level BETWEEN 1 AND 9),
+    school TEXT NOT NULL,
+    effect_type TEXT NOT NULL,
+    effect_dice TEXT,
+    damage_type TEXT,
+    targeting_type TEXT NOT NULL,
+    targeting_range INTEGER NOT NULL,
+    targeting_area_size INTEGER,
+    targeting_max_targets INTEGER,
+    saving_throw_ability TEXT,
+    saving_throw_effect TEXT,
+    components_verbal INTEGER NOT NULL DEFAULT 1,
+    components_somatic INTEGER NOT NULL DEFAULT 1,
+    components_material TEXT, -- JSON object or null
+    concentration INTEGER NOT NULL DEFAULT 0,
+    duration TEXT NOT NULL,
+    synthesis_dc INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    mastered_at TEXT NOT NULL,
+    times_cast INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(character_id, name)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_synthesized_spells_character ON synthesized_spells(character_id);
+  CREATE INDEX IF NOT EXISTS idx_synthesized_spells_school ON synthesized_spells(school);
   `);
 
   // Run migrations for existing databases that don't have the new columns

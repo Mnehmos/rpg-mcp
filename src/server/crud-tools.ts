@@ -76,7 +76,7 @@ Example:
     // Character tools
     CREATE_CHARACTER: {
         name: 'create_character',
-        description: `Create a new character.
+        description: `Create a new character. Only name is required - everything else has sensible defaults.
 
 Character types:
 - pc: Player character (default)
@@ -84,20 +84,70 @@ Character types:
 - enemy: Hostile creature
 - neutral: Non-hostile, non-ally
 
-Example:
+Class and race can be ANY string - use standard D&D classes/races or create custom ones.
+Stats can be any positive integer (not limited to 3-18).
+
+Example (minimal - just name):
+{
+  "name": "Mysterious Stranger"
+}
+
+Example (full):
 {
   "name": "Valeros",
+  "class": "Fighter",
+  "race": "Human",
   "hp": 20,
   "maxHp": 20,
   "ac": 18,
   "level": 1,
   "stats": { "str": 16, "dex": 14, "con": 14, "int": 10, "wis": 12, "cha": 10 },
   "characterType": "pc"
+}
+
+Example (custom class/race):
+{
+  "name": "Whiskers",
+  "class": "Chronomancer",
+  "race": "Mousefolk",
+  "stats": { "str": 6, "dex": 18, "con": 10, "int": 16, "wis": 14, "cha": 12 }
 }`,
-        // Use NPCSchema as the base since it includes all fields (Character + faction/behavior)
-        // Make NPC fields optional which they already are in NPCSchema
-        inputSchema: NPCSchema.omit({ id: true, createdAt: true, updatedAt: true }).extend({
+        // Flexible schema - only name required, everything else has defaults
+        inputSchema: z.object({
+            name: z.string().min(1).describe('Character name (required)'),
+            // Class/race can be ANY string - no enum restriction
+            class: z.string().optional().default('Adventurer')
+                .describe('Character class - any string allowed (Fighter, Wizard, Chronomancer, Merchant...)'),
+            race: z.string().optional().default('Human')
+                .describe('Character race - any string allowed (Human, Elf, Mousefolk, Illithid...)'),
+            background: z.string().optional().default('Folk Hero'),
+            alignment: z.string().optional(),
+            // Stats with no min/max - allow godlike or cursed entities
+            stats: z.object({
+                str: z.number().int().min(0).default(10),
+                dex: z.number().int().min(0).default(10),
+                con: z.number().int().min(0).default(10),
+                int: z.number().int().min(0).default(10),
+                wis: z.number().int().min(0).default(10),
+                cha: z.number().int().min(0).default(10),
+            }).optional().default({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }),
+            // Combat stats with sensible defaults
+            hp: z.number().int().min(1).optional(),
+            maxHp: z.number().int().min(1).optional(),
+            ac: z.number().int().min(0).optional().default(10),
+            level: z.number().int().min(1).optional().default(1),
+            // Type and NPC fields
             characterType: CharacterTypeSchema.optional().default('pc'),
+            factionId: z.string().optional(),
+            behavior: z.string().optional(),
+            // Spellcasting
+            characterClass: z.string().optional(),
+            knownSpells: z.array(z.string()).optional().default([]),
+            preparedSpells: z.array(z.string()).optional().default([]),
+            // Damage modifiers
+            resistances: z.array(z.string()).optional().default([]),
+            vulnerabilities: z.array(z.string()).optional().default([]),
+            immunities: z.array(z.string()).optional().default([]),
         })
     },
     GET_CHARACTER: {
@@ -240,9 +290,21 @@ export async function handleCreateCharacter(args: unknown, _ctx: SessionContext)
     const parsed = CRUDTools.CREATE_CHARACTER.inputSchema.parse(args);
 
     const now = new Date().toISOString();
+
+    // Calculate HP from constitution if not provided
+    // Base HP = 8 + con modifier (minimum 1)
+    const conModifier = Math.floor(((parsed.stats?.con ?? 10) - 10) / 2);
+    const baseHp = Math.max(1, 8 + conModifier);
+    const hp = parsed.hp ?? baseHp;
+    const maxHp = parsed.maxHp ?? hp;
+
     const character = {
         ...parsed,
         id: randomUUID(),
+        hp,
+        maxHp,
+        // Map 'class' to 'characterClass' for DB compatibility
+        characterClass: parsed.characterClass || parsed.class || 'Adventurer',
         createdAt: now,
         updatedAt: now
     } as Character | NPC;

@@ -647,7 +647,25 @@ export function validateSpellRange(
 
 /**
  * Get spellcasting configuration for a class
+ * Returns default non-caster config for unknown/custom classes
  */
-export function getSpellcastingConfig(characterClass: CharacterClass): SpellcastingConfig {
-    return SPELLCASTING_CONFIG[characterClass];
+export function getSpellcastingConfig(characterClass: string): SpellcastingConfig {
+    // Standard D&D classes (case-insensitive lookup)
+    const normalizedClass = characterClass.toLowerCase();
+    const config = SPELLCASTING_CONFIG[normalizedClass as CharacterClass];
+
+    if (config) {
+        return config;
+    }
+
+    // Default for custom classes: non-caster
+    // Custom caster classes should be handled via custom effects system
+    return {
+        canCast: false,
+        startLevel: 999,
+        ability: 'intelligence',
+        fullCaster: false,
+        preparationRequired: false,
+        pactMagic: false
+    };
 }

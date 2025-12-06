@@ -26,7 +26,8 @@ export const CharacterSchema = z.object({
     characterType: CharacterTypeSchema.optional().default('pc'),
 
     // Spellcasting fields (CRIT-002/006)
-    characterClass: CharacterClassSchema.optional().default('fighter'),
+    // Flexible character class - allows any string (standard D&D classes or custom like "Chronomancer")
+    characterClass: z.string().optional().default('fighter'),
     subclass: SubclassSchema.optional(),
     spellSlots: SpellSlotsSchema.optional(),
     pactMagicSlots: PactMagicSlotsSchema.optional(), // Warlock only

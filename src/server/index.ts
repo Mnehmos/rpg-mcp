@@ -15,6 +15,7 @@ import { RestTools, handleTakeLongRest, handleTakeShortRest } from './rest-tools
 import { NpcMemoryTools, handleGetNpcRelationship, handleUpdateNpcRelationship, handleRecordConversationMemory, handleGetConversationHistory, handleGetRecentInteractions, handleGetNpcContext } from './npc-memory-tools.js';
 import { TheftTools, handleStealItem, handleCheckItemStolen, handleCheckStolenItemsOnCharacter, handleCheckItemRecognition, handleSellToFence, handleRegisterFence, handleReportTheft, handleAdvanceHeatDecay, handleGetFence, handleListFences } from './theft-tools.js';
 import { CorpseTools, handleGetCorpse, handleGetCorpseByCharacter, handleListCorpsesInEncounter, handleListCorpsesNearby, handleLootCorpse, handleHarvestCorpse, handleCreateCorpse, handleGenerateLoot, handleGetCorpseInventory, handleCreateLootTable, handleGetLootTable, handleListLootTables, handleAdvanceCorpseDecay, handleCleanupCorpses } from './corpse-tools.js';
+import { ImprovisationTools, handleResolveImprovisedStunt, handleApplyCustomEffect, handleGetCustomEffects, handleRemoveCustomEffect, handleProcessEffectTriggers, handleAdvanceEffectDurations, handleAttemptArcaneSynthesis, handleGetSynthesizedSpells } from './improvisation-tools.js';
 import { PubSub } from '../engine/pubsub.js';
 import { registerEventTools } from './events.js';
 import { AuditLogger } from './audit.js';
@@ -968,6 +969,63 @@ async function main() {
         CorpseTools.CLEANUP_CORPSES.description,
         CorpseTools.CLEANUP_CORPSES.inputSchema.extend({ sessionId: z.string().optional() }).shape,
         auditLogger.wrapHandler(CorpseTools.CLEANUP_CORPSES.name, withSession(CorpseTools.CLEANUP_CORPSES.inputSchema, handleCleanupCorpses))
+    );
+
+    // Register Improvisation Tools (Rule of Cool, Custom Effects, Arcane Synthesis)
+    server.tool(
+        ImprovisationTools.RESOLVE_IMPROVISED_STUNT.name,
+        ImprovisationTools.RESOLVE_IMPROVISED_STUNT.description,
+        ImprovisationTools.RESOLVE_IMPROVISED_STUNT.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.RESOLVE_IMPROVISED_STUNT.name, withSession(ImprovisationTools.RESOLVE_IMPROVISED_STUNT.inputSchema, handleResolveImprovisedStunt))
+    );
+
+    server.tool(
+        ImprovisationTools.APPLY_CUSTOM_EFFECT.name,
+        ImprovisationTools.APPLY_CUSTOM_EFFECT.description,
+        ImprovisationTools.APPLY_CUSTOM_EFFECT.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.APPLY_CUSTOM_EFFECT.name, withSession(ImprovisationTools.APPLY_CUSTOM_EFFECT.inputSchema, handleApplyCustomEffect))
+    );
+
+    server.tool(
+        ImprovisationTools.GET_CUSTOM_EFFECTS.name,
+        ImprovisationTools.GET_CUSTOM_EFFECTS.description,
+        ImprovisationTools.GET_CUSTOM_EFFECTS.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.GET_CUSTOM_EFFECTS.name, withSession(ImprovisationTools.GET_CUSTOM_EFFECTS.inputSchema, handleGetCustomEffects))
+    );
+
+    server.tool(
+        ImprovisationTools.REMOVE_CUSTOM_EFFECT.name,
+        ImprovisationTools.REMOVE_CUSTOM_EFFECT.description,
+        ImprovisationTools.REMOVE_CUSTOM_EFFECT.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.REMOVE_CUSTOM_EFFECT.name, withSession(ImprovisationTools.REMOVE_CUSTOM_EFFECT.inputSchema, handleRemoveCustomEffect))
+    );
+
+    server.tool(
+        ImprovisationTools.PROCESS_EFFECT_TRIGGERS.name,
+        ImprovisationTools.PROCESS_EFFECT_TRIGGERS.description,
+        ImprovisationTools.PROCESS_EFFECT_TRIGGERS.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.PROCESS_EFFECT_TRIGGERS.name, withSession(ImprovisationTools.PROCESS_EFFECT_TRIGGERS.inputSchema, handleProcessEffectTriggers))
+    );
+
+    server.tool(
+        ImprovisationTools.ADVANCE_EFFECT_DURATIONS.name,
+        ImprovisationTools.ADVANCE_EFFECT_DURATIONS.description,
+        ImprovisationTools.ADVANCE_EFFECT_DURATIONS.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.ADVANCE_EFFECT_DURATIONS.name, withSession(ImprovisationTools.ADVANCE_EFFECT_DURATIONS.inputSchema, handleAdvanceEffectDurations))
+    );
+
+    server.tool(
+        ImprovisationTools.ATTEMPT_ARCANE_SYNTHESIS.name,
+        ImprovisationTools.ATTEMPT_ARCANE_SYNTHESIS.description,
+        ImprovisationTools.ATTEMPT_ARCANE_SYNTHESIS.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.ATTEMPT_ARCANE_SYNTHESIS.name, withSession(ImprovisationTools.ATTEMPT_ARCANE_SYNTHESIS.inputSchema, handleAttemptArcaneSynthesis))
+    );
+
+    server.tool(
+        ImprovisationTools.GET_SYNTHESIZED_SPELLS.name,
+        ImprovisationTools.GET_SYNTHESIZED_SPELLS.description,
+        ImprovisationTools.GET_SYNTHESIZED_SPELLS.inputSchema.extend({ sessionId: z.string().optional() }).shape,
+        auditLogger.wrapHandler(ImprovisationTools.GET_SYNTHESIZED_SPELLS.name, withSession(ImprovisationTools.GET_SYNTHESIZED_SPELLS.inputSchema, handleGetSynthesizedSpells))
     );
 
     // Connect transport
