@@ -415,6 +415,20 @@ export async function handleResolveImprovisedStunt(args: unknown, _ctx: SessionC
         result.damage_dealt = baseDamage;
         result.targets_affected = [];
 
+        // Build target name lookup map
+        const targetNames: Map<string | number, string> = new Map();
+        if (parsed.target_ids) {
+            for (let i = 0; i < parsed.target_ids.length; i++) {
+                const targetId = parsed.target_ids[i];
+                try {
+                    const char = charRepo.findById(String(targetId));
+                    targetNames.set(targetId, char?.name || `Target ${i + 1}`);
+                } catch {
+                    targetNames.set(targetId, `Target ${i + 1}`);
+                }
+            }
+        }
+
         // Apply to targets (simplified - in full impl would check saves)
         if (parsed.target_ids && parsed.target_types) {
             for (let i = 0; i < parsed.target_ids.length; i++) {
@@ -435,7 +449,7 @@ export async function handleResolveImprovisedStunt(args: unknown, _ctx: SessionC
 
                 result.targets_affected.push({
                     id: parsed.target_ids[i],
-                    name: `Target ${i + 1}`,
+                    name: targetNames.get(parsed.target_ids[i]) || `Target ${i + 1}`,
                     damage_taken: targetDamage,
                     saved,
                     condition_applied: !saved && parsed.consequences.apply_condition

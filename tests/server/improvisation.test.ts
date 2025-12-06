@@ -691,9 +691,54 @@ describe('Category 7: Database Schema', () => {
 });
 
 // ============================================================================
-// CATEGORY 8: SYNTHESIZED SPELLS
+// CATEGORY 8: RULE OF COOL - STUNT RESOLUTION
 // ============================================================================
-describe('Category 8: Synthesized Spells', () => {
+describe('Category 8: Rule of Cool - Stunt Resolution', () => {
+    test('8.0 - MED-008: stunt resolution should look up actual target names when IDs are strings', async () => {
+        // Create NPCs with actual names - using string IDs
+        const thug1 = createCharacter({ id: '1', name: 'Brutus the Thug', type: 'npc' });
+        const thug2 = createCharacter({ id: '2', name: 'Marcus the Guard', type: 'npc' });
+        const player = createCharacter({ id: '3', name: 'Hero', stats: { str: 16, dex: 14, con: 12, int: 10, wis: 10, cha: 10 } });
+
+        // Import and call the handler - using integer IDs as per schema
+        // The schema uses integer IDs (encounter participant IDs), but internally
+        // we convert to string for character lookup
+        const { handleResolveImprovisedStunt } = await import('../../src/server/improvisation-tools.js');
+
+        const result = await handleResolveImprovisedStunt({
+            encounter_id: 1,
+            actor_id: 3, // Integer ID as required by schema
+            actor_type: 'character',
+            target_ids: [1, 2], // Integer IDs as required by schema
+            target_types: ['npc', 'npc'],
+            narrative_intent: 'I swing from the chandelier and kick both thugs',
+            skill_check: { skill: 'acrobatics', dc: 15 },
+            action_cost: 'action',
+            consequences: {
+                success_damage: '2d6',
+                damage_type: 'bludgeoning',
+                apply_condition: 'prone'
+            }
+        }, { requestId: 'test' });
+
+        // Parse the result text to check for actual names
+        const text = result.content[0].text;
+
+        // The output should contain the actual NPC names, not "Target 1" and "Target 2"
+        // If the stunt succeeded and there are targets affected, check for names
+        if (text.includes('🎯 Targets:')) {
+            expect(text).toContain('Brutus the Thug');
+            expect(text).toContain('Marcus the Guard');
+            expect(text).not.toMatch(/• Target 1:/);
+            expect(text).not.toMatch(/• Target 2:/);
+        }
+    });
+});
+
+// ============================================================================
+// CATEGORY 9: SYNTHESIZED SPELLS
+// ============================================================================
+describe('Category 9: Synthesized Spells', () => {
 
     test('8.1 - can insert synthesized spell', () => {
         const char = createCharacter({ name: 'Wizard' });
