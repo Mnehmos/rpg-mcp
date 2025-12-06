@@ -731,6 +731,45 @@ function runMigrations(db: Database.Database) {
     console.error('[Migration] Adding stealth_bonus column to characters table');
     db.exec(`ALTER TABLE characters ADD COLUMN stealth_bonus INTEGER DEFAULT 0;`);
   }
+
+  // SPATIAL: Add coordinate and network support to room_nodes
+  const roomColumns = db.prepare('PRAGMA table_info(room_nodes)').all() as Array<{ name: string }>;
+  const hasWorldX = roomColumns.some(col => col.name === 'world_x');
+  const hasWorldY = roomColumns.some(col => col.name === 'world_y');
+  const hasNetworkId = roomColumns.some(col => col.name === 'network_id');
+
+  if (!hasWorldX) {
+    console.error('[Migration] Adding world_x column to room_nodes table');
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN world_x INTEGER;`);
+  }
+  if (!hasWorldY) {
+    console.error('[Migration] Adding world_y column to room_nodes table');
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN world_y INTEGER;`);
+  }
+  if (!hasNetworkId) {
+    console.error('[Migration] Adding network_id column to room_nodes table');
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN network_id TEXT REFERENCES node_networks(id) ON DELETE SET NULL;`);
+  }
+
+  // SPATIAL: Create node_networks table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS node_networks(
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL CHECK(length(trim(name)) > 0 AND length(name) <= 100),
+      type TEXT NOT NULL CHECK(type IN ('cluster', 'linear')),
+      world_id TEXT NOT NULL,
+      center_x INTEGER NOT NULL,
+      center_y INTEGER NOT NULL,
+      bounding_box TEXT, -- JSON: {minX, maxX, minY, maxY}
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_node_networks_coords ON node_networks(center_x, center_y);
+    CREATE INDEX IF NOT EXISTS idx_node_networks_world ON node_networks(world_id);
+    CREATE INDEX IF NOT EXISTS idx_room_nodes_coords ON room_nodes(world_x, world_y);
+    CREATE INDEX IF NOT EXISTS idx_room_nodes_network ON room_nodes(network_id);
+  `);
 }
 
 function createPostMigrationIndexes(db: Database.Database) {

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { RoomNode, RoomNodeSchema, Exit } from '../../schema/spatial.js';
+import { RoomNode, RoomNodeSchema, Exit, NodeNetwork, NodeNetworkSchema } from '../../schema/spatial.js';
 
 export class SpatialRepository {
     constructor(private db: Database.Database) { }
@@ -10,11 +10,13 @@ export class SpatialRepository {
         const stmt = this.db.prepare(`
             INSERT INTO room_nodes (
                 id, name, base_description, biome_context, atmospherics,
-                exits, entity_ids, created_at, updated_at, visited_count, last_visited_at
+                exits, entity_ids, created_at, updated_at, visited_count, last_visited_at,
+                world_x, world_y, network_id
             )
             VALUES (
                 @id, @name, @baseDescription, @biomeContext, @atmospherics,
-                @exits, @entityIds, @createdAt, @updatedAt, @visitedCount, @lastVisitedAt
+                @exits, @entityIds, @createdAt, @updatedAt, @visitedCount, @lastVisitedAt,
+                @worldX, @worldY, @networkId
             )
         `);
 
@@ -30,6 +32,9 @@ export class SpatialRepository {
             updatedAt: validRoom.updatedAt,
             visitedCount: validRoom.visitedCount,
             lastVisitedAt: validRoom.lastVisitedAt || null,
+            worldX: validRoom.worldX !== undefined ? validRoom.worldX : null,
+            worldY: validRoom.worldY !== undefined ? validRoom.worldY : null,
+            networkId: validRoom.networkId || null,
         });
     }
 
@@ -70,7 +75,8 @@ export class SpatialRepository {
             UPDATE room_nodes
             SET name = ?, base_description = ?, biome_context = ?,
                 atmospherics = ?, exits = ?, entity_ids = ?,
-                visited_count = ?, last_visited_at = ?, updated_at = ?
+                visited_count = ?, last_visited_at = ?, updated_at = ?,
+                world_x = ?, world_y = ?, network_id = ?
             WHERE id = ?
         `);
 
@@ -84,6 +90,9 @@ export class SpatialRepository {
             validRoom.visitedCount,
             validRoom.lastVisitedAt || null,
             validRoom.updatedAt,
+            validRoom.worldX !== undefined ? validRoom.worldX : null,
+            validRoom.worldY !== undefined ? validRoom.worldY : null,
+            validRoom.networkId || null,
             id
         );
 
@@ -155,6 +164,121 @@ export class SpatialRepository {
         });
     }
 
+    // ============================================================
+    // COORDINATE-BASED QUERIES
+    // ============================================================
+
+    findRoomsByCoordinates(x: number, y: number): RoomNode[] {
+        const stmt = this.db.prepare(
+            'SELECT * FROM room_nodes WHERE world_x = ? AND world_y = ? ORDER BY name'
+        );
+        const rows = stmt.all(x, y) as RoomNodeRow[];
+        return rows.map(row => this.rowToRoomNode(row));
+    }
+
+    findRoomsInBoundingBox(minX: number, maxX: number, minY: number, maxY: number): RoomNode[] {
+        const stmt = this.db.prepare(`
+            SELECT * FROM room_nodes
+            WHERE world_x >= ? AND world_x <= ?
+              AND world_y >= ? AND world_y <= ?
+            ORDER BY world_x, world_y, name
+        `);
+        const rows = stmt.all(minX, maxX, minY, maxY) as RoomNodeRow[];
+        return rows.map(row => this.rowToRoomNode(row));
+    }
+
+    findNearestRoom(x: number, y: number): RoomNode | null {
+        // Find room with minimum Euclidean distance
+        const stmt = this.db.prepare(`
+            SELECT *,
+                   ((world_x - ?) * (world_x - ?) + (world_y - ?) * (world_y - ?)) as distance_squared
+            FROM room_nodes
+            WHERE world_x IS NOT NULL AND world_y IS NOT NULL
+            ORDER BY distance_squared
+            LIMIT 1
+        `);
+        const row = stmt.get(x, x, y, y) as RoomNodeRow | undefined;
+        if (!row) return null;
+        return this.rowToRoomNode(row);
+    }
+
+    // ============================================================
+    // NODE NETWORK METHODS
+    // ============================================================
+
+    createNetwork(network: NodeNetwork): void {
+        const validNetwork = NodeNetworkSchema.parse(network);
+
+        const stmt = this.db.prepare(`
+            INSERT INTO node_networks (
+                id, name, type, world_id, center_x, center_y,
+                bounding_box, created_at, updated_at
+            )
+            VALUES (
+                @id, @name, @type, @worldId, @centerX, @centerY,
+                @boundingBox, @createdAt, @updatedAt
+            )
+        `);
+
+        stmt.run({
+            id: validNetwork.id,
+            name: validNetwork.name,
+            type: validNetwork.type,
+            worldId: validNetwork.worldId,
+            centerX: validNetwork.centerX,
+            centerY: validNetwork.centerY,
+            boundingBox: validNetwork.boundingBox ? JSON.stringify(validNetwork.boundingBox) : null,
+            createdAt: validNetwork.createdAt,
+            updatedAt: validNetwork.updatedAt,
+        });
+    }
+
+    findNetworkById(id: string): NodeNetwork | null {
+        const stmt = this.db.prepare('SELECT * FROM node_networks WHERE id = ?');
+        const row = stmt.get(id) as NodeNetworkRow | undefined;
+
+        if (!row) return null;
+        return this.rowToNodeNetwork(row);
+    }
+
+    findRoomsByNetwork(networkId: string): RoomNode[] {
+        const stmt = this.db.prepare(
+            'SELECT * FROM room_nodes WHERE network_id = ? ORDER BY name'
+        );
+        const rows = stmt.all(networkId) as RoomNodeRow[];
+        return rows.map(row => this.rowToRoomNode(row));
+    }
+
+    findNetworksAtCoordinates(x: number, y: number): NodeNetwork[] {
+        // Find networks where (x,y) is within their bounds or at their center
+        const stmt = this.db.prepare(`
+            SELECT * FROM node_networks
+            WHERE center_x = ? AND center_y = ?
+        `);
+        const rows = stmt.all(x, y) as NodeNetworkRow[];
+
+        // Also check bounding boxes
+        const boundedNetworks = this.db.prepare(`
+            SELECT * FROM node_networks
+            WHERE bounding_box IS NOT NULL
+        `).all() as NodeNetworkRow[];
+
+        const allNetworks = [...rows];
+
+        for (const row of boundedNetworks) {
+            if (row.bounding_box) {
+                const bbox = JSON.parse(row.bounding_box);
+                if (x >= bbox.minX && x <= bbox.maxX && y >= bbox.minY && y <= bbox.maxY) {
+                    if (!allNetworks.find(n => n.id === row.id)) {
+                        allNetworks.push(row);
+                    }
+                }
+            }
+        }
+
+        return allNetworks.map(row => this.rowToNodeNetwork(row));
+    }
+
     private rowToRoomNode(row: RoomNodeRow): RoomNode {
         return RoomNodeSchema.parse({
             id: row.id,
@@ -168,6 +292,23 @@ export class SpatialRepository {
             updatedAt: row.updated_at,
             visitedCount: row.visited_count,
             lastVisitedAt: row.last_visited_at || undefined,
+            worldX: row.world_x !== null ? row.world_x : undefined,
+            worldY: row.world_y !== null ? row.world_y : undefined,
+            networkId: row.network_id || undefined,
+        });
+    }
+
+    private rowToNodeNetwork(row: NodeNetworkRow): NodeNetwork {
+        return NodeNetworkSchema.parse({
+            id: row.id,
+            name: row.name,
+            type: row.type,
+            worldId: row.world_id,
+            centerX: row.center_x,
+            centerY: row.center_y,
+            boundingBox: row.bounding_box ? JSON.parse(row.bounding_box) : undefined,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
         });
     }
 }
@@ -184,4 +325,19 @@ interface RoomNodeRow {
     updated_at: string;
     visited_count: number;
     last_visited_at: string | null;
+    world_x: number | null;
+    world_y: number | null;
+    network_id: string | null;
+}
+
+interface NodeNetworkRow {
+    id: string;
+    name: string;
+    type: 'cluster' | 'linear';
+    world_id: string;
+    center_x: number;
+    center_y: number;
+    bounding_box: string | null;
+    created_at: string;
+    updated_at: string;
 }
