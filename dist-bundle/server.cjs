@@ -49137,6 +49137,21 @@ var TerrainSchema = external_exports.object({
   difficultTerrain: external_exports.array(external_exports.string()).optional()
   // Future: 2x movement cost
 });
+var PropSchema = external_exports.object({
+  id: external_exports.string(),
+  position: external_exports.string(),
+  // "x,y" format
+  label: external_exports.string(),
+  propType: external_exports.enum(["structure", "cover", "climbable", "hazard", "interactive", "decoration"]),
+  heightFeet: external_exports.number().optional(),
+  cover: external_exports.enum(["none", "half", "three_quarter", "full"]).optional(),
+  climbable: external_exports.boolean().optional(),
+  climbDC: external_exports.number().optional(),
+  breakable: external_exports.boolean().optional(),
+  hp: external_exports.number().optional(),
+  currentHp: external_exports.number().optional(),
+  description: external_exports.string().optional()
+});
 var EncounterSchema = external_exports.object({
   id: external_exports.string(),
   regionId: external_exports.string().optional(),
@@ -49147,6 +49162,8 @@ var EncounterSchema = external_exports.object({
   status: external_exports.enum(["active", "completed", "paused"]),
   terrain: TerrainSchema.optional(),
   // CRIT-003: Terrain obstacles
+  props: external_exports.array(PropSchema).optional(),
+  // PHASE 1: Improvised props
   gridBounds: GridBoundsSchema.optional(),
   // BUG-001: Spatial boundary validation
   createdAt: external_exports.string().datetime(),
@@ -49173,12 +49190,15 @@ var EncounterRepository = class {
     if (!columnNames.includes("grid_bounds")) {
       this.db.prepare("ALTER TABLE encounters ADD COLUMN grid_bounds TEXT").run();
     }
+    if (!columnNames.includes("props")) {
+      this.db.prepare("ALTER TABLE encounters ADD COLUMN props TEXT").run();
+    }
   }
   create(encounter) {
     const validEncounter = EncounterSchema.parse(encounter);
     const stmt = this.db.prepare(`
-      INSERT INTO encounters (id, region_id, tokens, round, active_token_id, status, terrain, grid_bounds, created_at, updated_at)
-      VALUES (@id, @regionId, @tokens, @round, @activeTokenId, @status, @terrain, @gridBounds, @createdAt, @updatedAt)
+      INSERT INTO encounters (id, region_id, tokens, round, active_token_id, status, terrain, props, grid_bounds, created_at, updated_at)
+      VALUES (@id, @regionId, @tokens, @round, @activeTokenId, @status, @terrain, @props, @gridBounds, @createdAt, @updatedAt)
     `);
     stmt.run({
       id: validEncounter.id,
@@ -49190,6 +49210,8 @@ var EncounterRepository = class {
       status: validEncounter.status,
       // PHASE 1: Persist terrain separately
       terrain: validEncounter.terrain ? JSON.stringify(validEncounter.terrain) : null,
+      // PHASE 1: Persist props
+      props: validEncounter.props ? JSON.stringify(validEncounter.props) : null,
       // PHASE 2: Persist grid bounds
       gridBounds: validEncounter.gridBounds ? JSON.stringify(validEncounter.gridBounds) : null,
       createdAt: validEncounter.createdAt,
@@ -49206,6 +49228,10 @@ var EncounterRepository = class {
       round: row.round,
       activeTokenId: row.active_token_id || void 0,
       status: row.status,
+      // Restoring props
+      props: row.props ? JSON.parse(row.props) : void 0,
+      // Restoring terrain
+      terrain: row.terrain ? JSON.parse(row.terrain) : void 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     }));
@@ -49220,7 +49246,7 @@ var EncounterRepository = class {
   saveState(encounterId, state) {
     const stmt = this.db.prepare(`
             UPDATE encounters
-            SET tokens = ?, round = ?, active_token_id = ?, status = ?, terrain = ?, grid_bounds = ?, updated_at = ?
+            SET tokens = ?, round = ?, active_token_id = ?, status = ?, terrain = ?, props = ?, grid_bounds = ?, updated_at = ?
             WHERE id = ?
         `);
     const currentTurnId = state.turnOrder[state.currentTurnIndex];
@@ -49231,6 +49257,8 @@ var EncounterRepository = class {
       "active",
       // PHASE 1: Persist terrain
       state.terrain ? JSON.stringify(state.terrain) : null,
+      // PHASE 1: Persist props
+      state.props ? JSON.stringify(state.props) : null,
       // PHASE 2: Persist grid bounds
       state.gridBounds ? JSON.stringify(state.gridBounds) : null,
       (/* @__PURE__ */ new Date()).toISOString(),
@@ -49250,6 +49278,7 @@ var EncounterRepository = class {
       return null;
     const participants = JSON.parse(row.tokens);
     const terrain = row.terrain ? JSON.parse(row.terrain) : void 0;
+    const props = row.props ? JSON.parse(row.props) : void 0;
     const gridBounds = row.grid_bounds ? JSON.parse(row.grid_bounds) : DEFAULT_GRID_BOUNDS;
     const sortedParticipants = [...participants].sort((a, b) => {
       const initA = a.initiative ?? 0;
@@ -49275,6 +49304,7 @@ var EncounterRepository = class {
       round: row.round,
       // PHASE 1: Restore terrain
       terrain,
+      props,
       // PHASE 2: Restore grid bounds
       gridBounds,
       // LAIR action support

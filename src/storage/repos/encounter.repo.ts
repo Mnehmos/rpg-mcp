@@ -35,13 +35,16 @@ export class EncounterRepository {
         if (!columnNames.includes('grid_bounds')) {
             this.db.prepare('ALTER TABLE encounters ADD COLUMN grid_bounds TEXT').run();
         }
+        if (!columnNames.includes('props')) {
+            this.db.prepare('ALTER TABLE encounters ADD COLUMN props TEXT').run();
+        }
     }
 
     create(encounter: Encounter): void {
         const validEncounter = EncounterSchema.parse(encounter);
         const stmt = this.db.prepare(`
-      INSERT INTO encounters (id, region_id, tokens, round, active_token_id, status, terrain, grid_bounds, created_at, updated_at)
-      VALUES (@id, @regionId, @tokens, @round, @activeTokenId, @status, @terrain, @gridBounds, @createdAt, @updatedAt)
+      INSERT INTO encounters (id, region_id, tokens, round, active_token_id, status, terrain, props, grid_bounds, created_at, updated_at)
+      VALUES (@id, @regionId, @tokens, @round, @activeTokenId, @status, @terrain, @props, @gridBounds, @createdAt, @updatedAt)
     `);
         stmt.run({
             id: validEncounter.id,
@@ -53,6 +56,8 @@ export class EncounterRepository {
             status: validEncounter.status,
             // PHASE 1: Persist terrain separately
             terrain: validEncounter.terrain ? JSON.stringify(validEncounter.terrain) : null,
+            // PHASE 1: Persist props
+            props: validEncounter.props ? JSON.stringify(validEncounter.props) : null,
             // PHASE 2: Persist grid bounds
             gridBounds: validEncounter.gridBounds ? JSON.stringify(validEncounter.gridBounds) : null,
             createdAt: validEncounter.createdAt,
@@ -72,6 +77,10 @@ export class EncounterRepository {
                 round: row.round,
                 activeTokenId: row.active_token_id || undefined,
                 status: row.status,
+                // Restoring props
+                props: row.props ? JSON.parse(row.props) : undefined,
+                // Restoring terrain
+                terrain: row.terrain ? JSON.parse(row.terrain) : undefined,
                 createdAt: row.created_at,
                 updatedAt: row.updated_at,
             })
@@ -87,7 +96,7 @@ export class EncounterRepository {
     saveState(encounterId: string, state: any): void {
         const stmt = this.db.prepare(`
             UPDATE encounters
-            SET tokens = ?, round = ?, active_token_id = ?, status = ?, terrain = ?, grid_bounds = ?, updated_at = ?
+            SET tokens = ?, round = ?, active_token_id = ?, status = ?, terrain = ?, props = ?, grid_bounds = ?, updated_at = ?
             WHERE id = ?
         `);
 
@@ -102,6 +111,8 @@ export class EncounterRepository {
             'active',
             // PHASE 1: Persist terrain
             state.terrain ? JSON.stringify(state.terrain) : null,
+            // PHASE 1: Persist props
+            state.props ? JSON.stringify(state.props) : null,
             // PHASE 2: Persist grid bounds
             state.gridBounds ? JSON.stringify(state.gridBounds) : null,
             new Date().toISOString(),
@@ -125,6 +136,9 @@ export class EncounterRepository {
 
         // PHASE 1: Parse terrain if present
         const terrain = row.terrain ? JSON.parse(row.terrain) : undefined;
+        
+        // PHASE 1: Parse props if present
+        const props = row.props ? JSON.parse(row.props) : undefined;
 
         // PHASE 2: Parse grid bounds if present, else use defaults
         const gridBounds = row.grid_bounds
@@ -161,6 +175,7 @@ export class EncounterRepository {
             round: row.round,
             // PHASE 1: Restore terrain
             terrain,
+            props,
             // PHASE 2: Restore grid bounds
             gridBounds,
             // LAIR action support
@@ -190,6 +205,7 @@ interface EncounterRow {
     status: string;
     // PHASE 1: Terrain and bounds persistence
     terrain: string | null;
+    props: string | null;
     grid_bounds: string | null;
     created_at: string;
     updated_at: string;

@@ -116,6 +116,23 @@ export const TerrainSchema = z.object({
 
 export type Terrain = z.infer<typeof TerrainSchema>;
 
+export const PropSchema = z.object({
+    id: z.string(),
+    position: z.string(), // "x,y" format
+    label: z.string(),
+    propType: z.enum(['structure', 'cover', 'climbable', 'hazard', 'interactive', 'decoration']),
+    heightFeet: z.number().optional(),
+    cover: z.enum(['none', 'half', 'three_quarter', 'full']).optional(),
+    climbable: z.boolean().optional(),
+    climbDC: z.number().optional(),
+    breakable: z.boolean().optional(),
+    hp: z.number().optional(),
+    currentHp: z.number().optional(),
+    description: z.string().optional()
+});
+
+export type Prop = z.infer<typeof PropSchema>;
+
 export const EncounterSchema = z.object({
     id: z.string(),
     regionId: z.string().optional(), // Made optional as it might not always be linked to a region
@@ -124,6 +141,7 @@ export const EncounterSchema = z.object({
     activeTokenId: z.string().optional(),
     status: z.enum(['active', 'completed', 'paused']),
     terrain: TerrainSchema.optional(), // CRIT-003: Terrain obstacles
+    props: z.array(PropSchema).optional(), // PHASE 1: Improvised props
     gridBounds: GridBoundsSchema.optional(), // BUG-001: Spatial boundary validation
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
