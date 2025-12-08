@@ -48,6 +48,8 @@ interface PartyMemberWithCharacterRow extends PartyMemberRow {
     level: number;
     behavior: string | null;
     character_type: string | null;
+    race: string | null;
+    character_class: string | null;
 }
 
 export class PartyRepository {
@@ -296,7 +298,7 @@ export class PartyRepository {
                 pm.id, pm.party_id, pm.character_id, pm.role, pm.is_active, 
                 pm.position, pm.share_percentage, pm.joined_at, pm.notes,
                 c.id as char_id, c.name as char_name, c.stats, c.hp, c.max_hp, 
-                c.ac, c.level, c.behavior, c.character_type
+                c.ac, c.level, c.behavior, c.character_type, c.race, c.character_class
             FROM party_members pm
             INNER JOIN characters c ON pm.character_id = c.id
             WHERE pm.party_id = ?
@@ -328,6 +330,8 @@ export class PartyRepository {
                 stats: JSON.parse(row.stats),
                 behavior: row.behavior ?? undefined,
                 characterType: (row.character_type as any) ?? undefined,
+                race: row.race ?? undefined,
+                class: row.character_class ?? undefined,
             }
         }));
 
@@ -343,9 +347,9 @@ export class PartyRepository {
         };
     }
 
-    getUnassignedCharacters(excludeTypes?: string[]): { id: string; name: string; level: number; characterType: string | null }[] {
+    getUnassignedCharacters(excludeTypes?: string[]): { id: string; name: string; level: number; characterType: string | null; race: string | null; class: string | null }[] {
         let query = `
-            SELECT c.id, c.name, c.level, c.character_type as characterType
+            SELECT c.id, c.name, c.level, c.character_type as characterType, c.race, c.character_class as class
             FROM characters c
             LEFT JOIN party_members pm ON c.id = pm.character_id
             WHERE pm.id IS NULL
@@ -361,7 +365,7 @@ export class PartyRepository {
         query += ' ORDER BY c.name ASC';
 
         const stmt = this.db.prepare(query);
-        return stmt.all(...params) as { id: string; name: string; level: number; characterType: string | null }[];
+        return stmt.all(...params) as { id: string; name: string; level: number; characterType: string | null; race: string | null; class: string | null }[];
     }
 
     // ========== Touch for activity tracking ==========

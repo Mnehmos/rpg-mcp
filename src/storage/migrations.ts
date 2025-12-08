@@ -701,6 +701,13 @@ function runMigrations(db: Database.Database) {
     db.exec(`ALTER TABLE characters ADD COLUMN conditions TEXT DEFAULT '[]';`);
   }
 
+  // Add race column for character race tracking
+  const hasRace = charColumns.some(col => col.name === 'race');
+  if (!hasRace) {
+    console.error('[Migration] Adding race column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN race TEXT DEFAULT 'Human';`);
+  }
+
   // HIGH-007: Add legendary creature columns to characters table
   const hasLegendaryActions = charColumns.some(col => col.name === 'legendary_actions');
   const hasLegendaryActionsRemaining = charColumns.some(col => col.name === 'legendary_actions_remaining');

@@ -52884,6 +52884,27 @@ function migrate(db) {
   );
 
   CREATE INDEX IF NOT EXISTS idx_auras_owner ON auras(owner_id);
+
+  -- EVENT INBOX: Polling-based event queue for "autonomous" NPC actions
+  -- Events are pushed by internal systems, polled by frontend
+  CREATE TABLE IF NOT EXISTS event_inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL CHECK (event_type IN (
+      'npc_action', 'combat_update', 'world_change', 'quest_update',
+      'time_passage', 'environmental', 'system'
+    )),
+    payload TEXT NOT NULL,              -- JSON event data
+    source_type TEXT CHECK (source_type IN ('npc', 'combat', 'world', 'system', 'scheduler')),
+    source_id TEXT,                     -- ID of source entity
+    priority INTEGER NOT NULL DEFAULT 0, -- Higher = more urgent
+    created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+    consumed_at TEXT,                   -- NULL means unread
+    expires_at TEXT                     -- Optional TTL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_inbox_unconsumed ON event_inbox(consumed_at) WHERE consumed_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_event_inbox_created ON event_inbox(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_event_inbox_priority ON event_inbox(priority DESC);
   `);
   runMigrations(db);
   createPostMigrationIndexes(db);
@@ -52971,6 +52992,11 @@ function runMigrations(db) {
   if (!hasConditions) {
     console.error("[Migration] Adding conditions column to characters table");
     db.exec(`ALTER TABLE characters ADD COLUMN conditions TEXT DEFAULT '[]';`);
+  }
+  const hasRace = charColumns.some((col) => col.name === "race");
+  if (!hasRace) {
+    console.error("[Migration] Adding race column to characters table");
+    db.exec(`ALTER TABLE characters ADD COLUMN race TEXT DEFAULT 'Human';`);
   }
   const hasLegendaryActions = charColumns.some((col) => col.name === "legendary_actions");
   const hasLegendaryActionsRemaining = charColumns.some((col) => col.name === "legendary_actions_remaining");
@@ -61971,11 +61997,11 @@ var DiceEngine = class {
   }
   // Parse string "2d6+4" into DiceExpression object
   parse(expression) {
-    const match = expression.match(/^(\d+)d(\d+)(?:(dl|dh|kl|kh)(\d+))?([+-]\d+)?(!)?$/);
+    const match = expression.match(/^(\d+)?d(\d+)(?:(dl|dh|kl|kh)(\d+))?([+-]\d+)?(!)?$/);
     if (!match) {
       throw new Error(`Invalid dice expression: ${expression}`);
     }
-    const count = parseInt(match[1], 10);
+    const count = match[1] ? parseInt(match[1], 10) : 1;
     const sides = parseInt(match[2], 10);
     const modifierType = match[3];
     const modifierCount = match[4] ? parseInt(match[4], 10) : 0;
@@ -64978,7 +65004,7 @@ var PartyRepository = class {
                 pm.id, pm.party_id, pm.character_id, pm.role, pm.is_active, 
                 pm.position, pm.share_percentage, pm.joined_at, pm.notes,
                 c.id as char_id, c.name as char_name, c.stats, c.hp, c.max_hp, 
-                c.ac, c.level, c.behavior, c.character_type
+                c.ac, c.level, c.behavior, c.character_type, c.race, c.character_class
             FROM party_members pm
             INNER JOIN characters c ON pm.character_id = c.id
             WHERE pm.party_id = ?
@@ -65007,7 +65033,9 @@ var PartyRepository = class {
         level: row.level,
         stats: JSON.parse(row.stats),
         behavior: row.behavior ?? void 0,
-        characterType: row.character_type ?? void 0
+        characterType: row.character_type ?? void 0,
+        race: row.race ?? void 0,
+        class: row.character_class ?? void 0
       }
     }));
     const leader = members.find((m) => m.role === "leader");
@@ -65022,7 +65050,7 @@ var PartyRepository = class {
   }
   getUnassignedCharacters(excludeTypes) {
     let query = `
-            SELECT c.id, c.name, c.level, c.character_type as characterType
+            SELECT c.id, c.name, c.level, c.character_type as characterType, c.race, c.character_class as class
             FROM characters c
             LEFT JOIN party_members pm ON c.id = pm.character_id
             WHERE pm.id IS NULL
@@ -73051,6 +73079,262 @@ async function handleGetTemplate(args, _ctx) {
   };
 }
 
+// dist/server/event-inbox-tools.js
+init_zod();
+
+// dist/storage/repos/event-inbox.repo.js
+var EventInboxRepository = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  /**
+   * Push an event to the inbox
+   */
+  push(event) {
+    const stmt = this.db.prepare(`
+      INSERT INTO event_inbox (event_type, payload, source_type, source_id, priority, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(event.eventType, JSON.stringify(event.payload), event.sourceType || null, event.sourceId || null, event.priority || 0, event.expiresAt || null);
+    return result.lastInsertRowid;
+  }
+  /**
+   * Poll for unread events, ordered by priority then time
+   */
+  poll(limit = 20) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const stmt = this.db.prepare(`
+      SELECT * FROM event_inbox
+      WHERE consumed_at IS NULL
+        AND (expires_at IS NULL OR expires_at > ?)
+      ORDER BY priority DESC, created_at ASC
+      LIMIT ?
+    `);
+    const rows = stmt.all(now, limit);
+    return rows.map((row) => this.rowToEvent(row));
+  }
+  /**
+   * Mark events as consumed (read)
+   */
+  markConsumed(ids) {
+    if (ids.length === 0)
+      return 0;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const placeholders = ids.map(() => "?").join(",");
+    const stmt = this.db.prepare(`
+      UPDATE event_inbox
+      SET consumed_at = ?
+      WHERE id IN (${placeholders})
+    `);
+    const result = stmt.run(now, ...ids);
+    return result.changes;
+  }
+  /**
+   * Poll and immediately mark as consumed (atomic)
+   */
+  pollAndConsume(limit = 20) {
+    const events = this.poll(limit);
+    const ids = events.map((e) => e.id).filter(Boolean);
+    if (ids.length > 0) {
+      this.markConsumed(ids);
+    }
+    return events;
+  }
+  /**
+   * Get recent event history (including consumed)
+   */
+  getHistory(options = {}) {
+    const { limit = 50, eventType, sourceType, includeConsumed = true } = options;
+    let query = "SELECT * FROM event_inbox WHERE 1=1";
+    const params = [];
+    if (!includeConsumed) {
+      query += " AND consumed_at IS NULL";
+    }
+    if (eventType) {
+      query += " AND event_type = ?";
+      params.push(eventType);
+    }
+    if (sourceType) {
+      query += " AND source_type = ?";
+      params.push(sourceType);
+    }
+    query += " ORDER BY created_at DESC LIMIT ?";
+    params.push(limit);
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params);
+    return rows.map((row) => this.rowToEvent(row));
+  }
+  /**
+   * Clean up old consumed events
+   */
+  cleanup(olderThanDays = 7) {
+    const cutoff = /* @__PURE__ */ new Date();
+    cutoff.setDate(cutoff.getDate() - olderThanDays);
+    const stmt = this.db.prepare(`
+      DELETE FROM event_inbox
+      WHERE consumed_at IS NOT NULL
+        AND created_at < ?
+    `);
+    const result = stmt.run(cutoff.toISOString());
+    return result.changes;
+  }
+  /**
+   * Get count of pending (unconsumed) events
+   */
+  getPendingCount() {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM event_inbox
+      WHERE consumed_at IS NULL
+    `);
+    const row = stmt.get();
+    return row.count;
+  }
+  rowToEvent(row) {
+    return {
+      id: row.id,
+      eventType: row.event_type,
+      payload: JSON.parse(row.payload),
+      sourceType: row.source_type,
+      sourceId: row.source_id || void 0,
+      priority: row.priority,
+      createdAt: row.created_at,
+      consumedAt: row.consumed_at,
+      expiresAt: row.expires_at
+    };
+  }
+};
+
+// dist/server/event-inbox-tools.js
+var EventTypeEnum = external_exports.enum([
+  "npc_action",
+  "combat_update",
+  "world_change",
+  "quest_update",
+  "time_passage",
+  "environmental",
+  "system"
+]);
+var SourceTypeEnum = external_exports.enum(["npc", "combat", "world", "system", "scheduler"]);
+var EventInboxTools = {
+  POLL_EVENTS: {
+    name: "poll_events",
+    description: `Poll the event inbox for unread events. Returns events and marks them as consumed.
+    
+Events are generated by NPCs, combat, world systems, and schedulers. They represent
+things that happened "while the player wasn't looking" - making NPCs feel autonomous.
+
+Example response:
+[
+  { "eventType": "npc_action", "payload": { "npcName": "Bartender", "action": "wipes a glass nervously" }},
+  { "eventType": "quest_update", "payload": { "questName": "Missing Merchant", "update": "New rumor heard" }}
+]`,
+    inputSchema: external_exports.object({
+      limit: external_exports.number().int().min(1).max(50).default(20).describe("Maximum events to return")
+    })
+  },
+  PUSH_EVENT: {
+    name: "push_event",
+    description: `Push an event to the inbox. Used by DM or internal systems to queue events.
+
+NPCs "doing things" on their own, combat updates, world changes - all go here.
+Frontend polls this to show what happened.`,
+    inputSchema: external_exports.object({
+      eventType: EventTypeEnum,
+      payload: external_exports.record(external_exports.any()).describe("Event data (JSON object)"),
+      sourceType: SourceTypeEnum.optional(),
+      sourceId: external_exports.string().optional().describe("ID of source NPC/entity"),
+      priority: external_exports.number().int().min(0).max(10).default(0).describe("0=normal, 10=urgent"),
+      expiresAt: external_exports.string().optional().describe("ISO timestamp when event expires")
+    })
+  },
+  GET_EVENT_HISTORY: {
+    name: "get_event_history",
+    description: "Get recent event history with optional filters.",
+    inputSchema: external_exports.object({
+      limit: external_exports.number().int().min(1).max(100).default(50),
+      eventType: EventTypeEnum.optional(),
+      sourceType: SourceTypeEnum.optional(),
+      includeConsumed: external_exports.boolean().default(true)
+    })
+  },
+  GET_PENDING_COUNT: {
+    name: "get_pending_event_count",
+    description: "Get the count of unread events in the inbox.",
+    inputSchema: external_exports.object({})
+  }
+};
+async function handlePollEvents(args, _ctx) {
+  const repo = new EventInboxRepository(getDb());
+  const events = repo.pollAndConsume(args.limit);
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        count: events.length,
+        events: events.map((e) => ({
+          id: e.id,
+          eventType: e.eventType,
+          payload: e.payload,
+          sourceType: e.sourceType,
+          sourceId: e.sourceId,
+          priority: e.priority,
+          createdAt: e.createdAt
+        }))
+      }, null, 2)
+    }]
+  };
+}
+async function handlePushEvent(args, _ctx) {
+  const repo = new EventInboxRepository(getDb());
+  const id = repo.push({
+    eventType: args.eventType,
+    payload: args.payload,
+    sourceType: args.sourceType,
+    sourceId: args.sourceId,
+    priority: args.priority,
+    expiresAt: args.expiresAt
+  });
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        success: true,
+        eventId: id,
+        message: `Event queued with ID ${id}`
+      })
+    }]
+  };
+}
+async function handleGetEventHistory(args, _ctx) {
+  const repo = new EventInboxRepository(getDb());
+  const events = repo.getHistory({
+    limit: args.limit,
+    eventType: args.eventType,
+    sourceType: args.sourceType,
+    includeConsumed: args.includeConsumed
+  });
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        count: events.length,
+        events
+      }, null, 2)
+    }]
+  };
+}
+async function handleGetPendingCount(_args, _ctx) {
+  const repo = new EventInboxRepository(getDb());
+  const count = repo.getPendingCount();
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({ pendingEvents: count })
+    }]
+  };
+}
+
 // dist/server/tool-registry.js
 function meta(name, description, category, keywords, capabilities, contextAware = false, estimatedTokenCost = "medium", deferLoading = true) {
   return {
@@ -73921,6 +74205,27 @@ function buildToolRegistry() {
       metadata: meta(WorkflowTools.GET_TEMPLATE.name, WorkflowTools.GET_TEMPLATE.description, "batch", ["workflow", "template", "get", "details"], ["Template details"], false, "low"),
       schema: WorkflowTools.GET_TEMPLATE.inputSchema,
       handler: handleGetTemplate
+    },
+    // === EVENT INBOX TOOLS ===
+    [EventInboxTools.POLL_EVENTS.name]: {
+      metadata: meta(EventInboxTools.POLL_EVENTS.name, EventInboxTools.POLL_EVENTS.description, "meta", ["event", "poll", "inbox", "npc", "autonomous", "notification"], ["Event polling", "NPC autonomy"], false, "low"),
+      schema: EventInboxTools.POLL_EVENTS.inputSchema,
+      handler: handlePollEvents
+    },
+    [EventInboxTools.PUSH_EVENT.name]: {
+      metadata: meta(EventInboxTools.PUSH_EVENT.name, EventInboxTools.PUSH_EVENT.description, "meta", ["event", "push", "queue", "npc", "action", "notification"], ["Event creation", "NPC action simulation"], false, "low"),
+      schema: EventInboxTools.PUSH_EVENT.inputSchema,
+      handler: handlePushEvent
+    },
+    [EventInboxTools.GET_EVENT_HISTORY.name]: {
+      metadata: meta(EventInboxTools.GET_EVENT_HISTORY.name, EventInboxTools.GET_EVENT_HISTORY.description, "meta", ["event", "history", "log", "recent"], ["Event history"], false, "low"),
+      schema: EventInboxTools.GET_EVENT_HISTORY.inputSchema,
+      handler: handleGetEventHistory
+    },
+    [EventInboxTools.GET_PENDING_COUNT.name]: {
+      metadata: meta(EventInboxTools.GET_PENDING_COUNT.name, EventInboxTools.GET_PENDING_COUNT.description, "meta", ["event", "count", "pending", "unread"], ["Pending event count"], false, "low"),
+      schema: EventInboxTools.GET_PENDING_COUNT.inputSchema,
+      handler: handleGetPendingCount
     }
     // Note: search_tools and load_tool_schema are registered separately in index.ts with full handlers
   };

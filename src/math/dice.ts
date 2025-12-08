@@ -12,13 +12,13 @@ export class DiceEngine {
 
     // Parse string "2d6+4" into DiceExpression object
     parse(expression: string): DiceExpression {
-        // Regex supports: NdX, NdX+M, NdXdl1, NdXkh2, NdXdl1+5, NdX!
-        const match = expression.match(/^(\d+)d(\d+)(?:(dl|dh|kl|kh)(\d+))?([+-]\d+)?(!)?$/);
+        // Regex supports: NdX, dX (shorthand for 1dX), NdX+M, NdXdl1, NdXkh2, NdXdl1+5, NdX!
+        const match = expression.match(/^(\d+)?d(\d+)(?:(dl|dh|kl|kh)(\d+))?([+-]\d+)?(!)?$/);
         if (!match) {
             throw new Error(`Invalid dice expression: ${expression}`);
         }
 
-        const count = parseInt(match[1], 10);
+        const count = match[1] ? parseInt(match[1], 10) : 1; // Default to 1 if omitted
         const sides = parseInt(match[2], 10);
         const modifierType = match[3]; // dl, dh, kl, kh
         const modifierCount = match[4] ? parseInt(match[4], 10) : 0;
