@@ -135,8 +135,8 @@ export async function handleLookAtSurroundings(args: unknown, _ctx: SessionConte
 
     // Check for darkness
     const isInDarkness = currentRoom.atmospherics.includes('DARKNESS');
-    const hasLight = observer.conditions?.includes('HAS_LIGHT') ||
-                     observer.conditions?.includes('DARKVISION');
+    const hasLight = observer.conditions?.some(c => c.name === 'HAS_LIGHT') ||
+                     observer.conditions?.some(c => c.name === 'DARKVISION');
 
     if (isInDarkness && !hasLight) {
         return {

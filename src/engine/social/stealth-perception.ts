@@ -116,7 +116,7 @@ export function getEnvironmentModifier(atmospherics: string[]): number {
  * @returns true if character cannot hear
  */
 export function isDeafened(character: Character | NPC): boolean {
-    return character.conditions?.includes('DEAFENED') || false;
+    return character.conditions?.some(c => c.name === 'DEAFENED') || false;
 }
 
 /**

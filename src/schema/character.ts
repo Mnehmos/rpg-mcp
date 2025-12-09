@@ -49,7 +49,11 @@ export const CharacterSchema = z.object({
     spellAttackBonus: z.number().int().optional(),
     concentratingOn: z.string().nullable().optional().default(null),
     activeSpells: z.array(z.string()).optional().default([]),
-    conditions: z.array(z.string()).optional().default([]),
+    conditions: z.array(z.object({
+        name: z.string().describe('Condition name (e.g., Poisoned, Frightened)'),
+        duration: z.number().int().optional().describe('Duration in rounds'),
+        source: z.string().optional().describe('Source of the condition')
+    })).optional().default([]),
     position: z.object({
         x: z.number(),
         y: z.number()

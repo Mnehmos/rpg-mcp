@@ -30230,7 +30230,7 @@ function isInAuraRange(auraCenter, targetPosition, radius) {
 }
 function createAura(request, auraRepo) {
   const aura = {
-    id: (0, import_crypto9.randomUUID)(),
+    id: (0, import_crypto10.randomUUID)(),
     ownerId: request.ownerId,
     spellName: request.spellName,
     spellLevel: request.spellLevel,
@@ -30409,11 +30409,11 @@ function expireOldAuras(currentRound, auraRepo) {
   }
   return expiredIds;
 }
-var import_crypto9;
+var import_crypto10;
 var init_aura = __esm({
   "dist/engine/magic/aura.js"() {
     "use strict";
-    import_crypto9 = require("crypto");
+    import_crypto10 = require("crypto");
   }
 });
 
@@ -60287,419 +60287,14 @@ STATE_JSON -->`;
 }
 
 // dist/server/crud-tools.js
-var import_crypto2 = require("crypto");
+var import_crypto3 = require("crypto");
 init_character_repo();
 init_party();
 init_spell();
 init_zod();
-function ensureDb() {
-  const dbPath = process.env.NODE_ENV === "test" ? ":memory:" : process.env.RPG_DATA_DIR ? `${process.env.RPG_DATA_DIR}/rpg.db` : "rpg.db";
-  const db = getDb(dbPath);
-  const worldRepo = new WorldRepository(db);
-  const charRepo = new CharacterRepository(db);
-  return { db, worldRepo, charRepo };
-}
-var CRUDTools = {
-  // World tools
-  CREATE_WORLD: {
-    name: "create_world",
-    description: "Create a new world in the database with name, seed, and dimensions.",
-    inputSchema: WorldSchema.omit({ id: true, createdAt: true, updatedAt: true })
-  },
-  GET_WORLD: {
-    name: "get_world",
-    description: "Retrieve a world by ID.",
-    inputSchema: external_exports.object({
-      id: external_exports.string()
-    })
-  },
-  LIST_WORLDS: {
-    name: "list_worlds",
-    description: "List all worlds.",
-    inputSchema: external_exports.object({})
-  },
-  UPDATE_WORLD_ENVIRONMENT: {
-    name: "update_world_environment",
-    description: "Update environmental properties (time, weather, lighting, etc.) for a world.",
-    inputSchema: external_exports.object({
-      id: external_exports.string(),
-      environment: external_exports.object({
-        date: external_exports.string().optional(),
-        timeOfDay: external_exports.string().optional(),
-        season: external_exports.string().optional(),
-        moonPhase: external_exports.string().optional(),
-        weatherConditions: external_exports.string().optional(),
-        temperature: external_exports.string().optional(),
-        lighting: external_exports.string().optional()
-      }).passthrough()
-    })
-  },
-  DELETE_WORLD: {
-    name: "delete_world",
-    description: "Delete a world by ID.",
-    inputSchema: external_exports.object({
-      id: external_exports.string()
-    })
-  },
-  // Character tools
-  CREATE_CHARACTER: {
-    name: "create_character",
-    description: `Create a new character. Only name is required - everything else has sensible defaults.
 
-Character types:
-- pc: Player character (default)
-- npc: Non-player character (ally or neutral)
-- enemy: Hostile creature
-- neutral: Non-hostile, non-ally
-
-Class and race can be ANY string - use standard D&D classes/races or create custom ones.
-Stats can be any positive integer (not limited to 3-18).
-
-Example (minimal - just name):
-{
-  "name": "Mysterious Stranger"
-}
-
-Example (full):
-{
-  "name": "Valeros",
-  "class": "Fighter",
-  "race": "Human",
-  "hp": 20,
-  "maxHp": 20,
-  "ac": 18,
-  "level": 1,
-  "stats": { "str": 16, "dex": 14, "con": 14, "int": 10, "wis": 12, "cha": 10 },
-  "characterType": "pc"
-}
-
-Example (custom class/race):
-{
-  "name": "Whiskers",
-  "class": "Chronomancer",
-  "race": "Mousefolk",
-  "stats": { "str": 6, "dex": 18, "con": 10, "int": 16, "wis": 14, "cha": 12 }
-}`,
-    // Flexible schema - only name required, everything else has defaults
-    inputSchema: external_exports.object({
-      name: external_exports.string().min(1).describe("Character name (required)"),
-      // Class/race can be ANY string - no enum restriction
-      class: external_exports.string().optional().default("Adventurer").describe("Character class - any string allowed (Fighter, Wizard, Chronomancer, Merchant...)"),
-      race: external_exports.string().optional().default("Human").describe("Character race - any string allowed (Human, Elf, Mousefolk, Illithid...)"),
-      background: external_exports.string().optional().default("Folk Hero"),
-      alignment: external_exports.string().optional(),
-      // Stats with no min/max - allow godlike or cursed entities
-      stats: external_exports.object({
-        str: external_exports.number().int().min(0).default(10),
-        dex: external_exports.number().int().min(0).default(10),
-        con: external_exports.number().int().min(0).default(10),
-        int: external_exports.number().int().min(0).default(10),
-        wis: external_exports.number().int().min(0).default(10),
-        cha: external_exports.number().int().min(0).default(10)
-      }).optional().default({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }),
-      // Combat stats with sensible defaults
-      hp: external_exports.number().int().min(1).optional(),
-      maxHp: external_exports.number().int().min(1).optional(),
-      ac: external_exports.number().int().min(0).optional().default(10),
-      level: external_exports.number().int().min(1).optional().default(1),
-      // Type and NPC fields
-      characterType: CharacterTypeSchema.optional().default("pc"),
-      factionId: external_exports.string().optional(),
-      behavior: external_exports.string().optional(),
-      // Spellcasting
-      characterClass: external_exports.string().optional(),
-      knownSpells: external_exports.array(external_exports.string()).optional().default([]),
-      preparedSpells: external_exports.array(external_exports.string()).optional().default([]),
-      // Damage modifiers
-      resistances: external_exports.array(external_exports.string()).optional().default([]),
-      vulnerabilities: external_exports.array(external_exports.string()).optional().default([]),
-      immunities: external_exports.array(external_exports.string()).optional().default([])
-    })
-  },
-  GET_CHARACTER: {
-    name: "get_character",
-    description: "Retrieve a character by ID.",
-    inputSchema: external_exports.object({
-      id: external_exports.string()
-    })
-  },
-  UPDATE_CHARACTER: {
-    name: "update_character",
-    description: `Update character properties. All fields except id are optional.
-
-For conditions, you can pass an array to SET all conditions (replacing existing), or use addConditions/removeConditions for granular control.`,
-    inputSchema: external_exports.object({
-      id: external_exports.string(),
-      name: external_exports.string().min(1).optional(),
-      race: external_exports.string().optional(),
-      class: external_exports.string().optional(),
-      hp: external_exports.number().int().min(0).optional(),
-      maxHp: external_exports.number().int().min(1).optional(),
-      ac: external_exports.number().int().min(0).optional(),
-      level: external_exports.number().int().min(1).optional(),
-      characterType: CharacterTypeSchema.optional(),
-      stats: external_exports.object({
-        str: external_exports.number().int().min(0).optional(),
-        dex: external_exports.number().int().min(0).optional(),
-        con: external_exports.number().int().min(0).optional(),
-        int: external_exports.number().int().min(0).optional(),
-        wis: external_exports.number().int().min(0).optional(),
-        cha: external_exports.number().int().min(0).optional()
-      }).optional(),
-      // Spellcasting updates
-      knownSpells: external_exports.array(external_exports.string()).optional(),
-      preparedSpells: external_exports.array(external_exports.string()).optional(),
-      cantripsKnown: external_exports.array(external_exports.string()).optional(),
-      spellSlots: SpellSlotsSchema.optional(),
-      pactMagicSlots: PactMagicSlotsSchema.optional(),
-      spellcastingAbility: SpellcastingAbilitySchema.optional(),
-      // Conditions/Status Effects
-      conditions: external_exports.array(external_exports.object({
-        name: external_exports.string(),
-        duration: external_exports.number().int().optional(),
-        source: external_exports.string().optional()
-      })).optional().describe("Replace all conditions with this array"),
-      addConditions: external_exports.array(external_exports.object({
-        name: external_exports.string(),
-        duration: external_exports.number().int().optional(),
-        source: external_exports.string().optional()
-      })).optional().describe("Add these conditions to existing ones"),
-      removeConditions: external_exports.array(external_exports.string()).optional().describe("Remove conditions by name")
-    })
-  },
-  LIST_CHARACTERS: {
-    name: "list_characters",
-    description: "List all characters, optionally filtered by type (pc, npc, enemy, neutral).",
-    inputSchema: external_exports.object({
-      characterType: CharacterTypeSchema.optional()
-    })
-  },
-  DELETE_CHARACTER: {
-    name: "delete_character",
-    description: "Delete a character by ID.",
-    inputSchema: external_exports.object({
-      id: external_exports.string()
-    })
-  }
-};
-async function handleCreateWorld(args, _ctx) {
-  const { worldRepo } = ensureDb();
-  const parsed = CRUDTools.CREATE_WORLD.inputSchema.parse(args);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const world = {
-    ...parsed,
-    id: (0, import_crypto2.randomUUID)(),
-    createdAt: now,
-    updatedAt: now
-  };
-  worldRepo.create(world);
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(world, null, 2)
-    }]
-  };
-}
-async function handleGetWorld(args, _ctx) {
-  const { worldRepo } = ensureDb();
-  const parsed = CRUDTools.GET_WORLD.inputSchema.parse(args);
-  const world = worldRepo.findById(parsed.id);
-  if (!world) {
-    throw new Error(`World not found: ${parsed.id}`);
-  }
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(world, null, 2)
-    }]
-  };
-}
-async function handleUpdateWorldEnvironment(args, _ctx) {
-  const { worldRepo } = ensureDb();
-  const parsed = CRUDTools.UPDATE_WORLD_ENVIRONMENT.inputSchema.parse(args);
-  const updated = worldRepo.updateEnvironment(parsed.id, parsed.environment);
-  if (!updated) {
-    throw new Error(`World not found: ${parsed.id}`);
-  }
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(updated, null, 2)
-    }]
-  };
-}
-async function handleListWorlds(args, _ctx) {
-  const { worldRepo } = ensureDb();
-  CRUDTools.LIST_WORLDS.inputSchema.parse(args);
-  const worlds = worldRepo.findAll();
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        worlds,
-        count: worlds.length
-      }, null, 2)
-    }]
-  };
-}
-async function handleDeleteWorld(args, _ctx) {
-  const { worldRepo } = ensureDb();
-  const parsed = CRUDTools.DELETE_WORLD.inputSchema.parse(args);
-  worldRepo.delete(parsed.id);
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        message: "World deleted",
-        id: parsed.id
-      }, null, 2)
-    }]
-  };
-}
-async function handleCreateCharacter(args, _ctx) {
-  const { charRepo } = ensureDb();
-  const parsed = CRUDTools.CREATE_CHARACTER.inputSchema.parse(args);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const conModifier = Math.floor(((parsed.stats?.con ?? 10) - 10) / 2);
-  const baseHp = Math.max(1, 8 + conModifier);
-  const hp = parsed.hp ?? baseHp;
-  const maxHp = parsed.maxHp ?? hp;
-  const character = {
-    ...parsed,
-    id: (0, import_crypto2.randomUUID)(),
-    hp,
-    maxHp,
-    // Map 'class' to 'characterClass' for DB compatibility
-    characterClass: parsed.characterClass || parsed.class || "Adventurer",
-    createdAt: now,
-    updatedAt: now
-  };
-  charRepo.create(character);
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(character, null, 2)
-    }]
-  };
-}
-async function handleGetCharacter(args, _ctx) {
-  const { charRepo } = ensureDb();
-  const parsed = CRUDTools.GET_CHARACTER.inputSchema.parse(args);
-  const character = charRepo.findById(parsed.id);
-  if (!character) {
-    throw new Error(`Character not found: ${parsed.id}`);
-  }
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(character, null, 2)
-    }]
-  };
-}
-async function handleUpdateCharacter(args, _ctx) {
-  const { charRepo } = ensureDb();
-  const parsed = CRUDTools.UPDATE_CHARACTER.inputSchema.parse(args);
-  const updateData = {};
-  if (parsed.name !== void 0)
-    updateData.name = parsed.name;
-  if (parsed.race !== void 0)
-    updateData.race = parsed.race;
-  if (parsed.class !== void 0)
-    updateData.characterClass = parsed.class;
-  if (parsed.hp !== void 0)
-    updateData.hp = parsed.hp;
-  if (parsed.maxHp !== void 0)
-    updateData.maxHp = parsed.maxHp;
-  if (parsed.ac !== void 0)
-    updateData.ac = parsed.ac;
-  if (parsed.level !== void 0)
-    updateData.level = parsed.level;
-  if (parsed.characterType !== void 0)
-    updateData.characterType = parsed.characterType;
-  if (parsed.stats !== void 0)
-    updateData.stats = parsed.stats;
-  if (parsed.knownSpells !== void 0)
-    updateData.knownSpells = parsed.knownSpells;
-  if (parsed.preparedSpells !== void 0)
-    updateData.preparedSpells = parsed.preparedSpells;
-  if (parsed.cantripsKnown !== void 0)
-    updateData.cantripsKnown = parsed.cantripsKnown;
-  if (parsed.spellSlots !== void 0)
-    updateData.spellSlots = parsed.spellSlots;
-  if (parsed.pactMagicSlots !== void 0)
-    updateData.pactMagicSlots = parsed.pactMagicSlots;
-  if (parsed.spellcastingAbility !== void 0)
-    updateData.spellcastingAbility = parsed.spellcastingAbility;
-  if (parsed.conditions !== void 0) {
-    updateData.conditions = parsed.conditions;
-  } else if (parsed.addConditions !== void 0 || parsed.removeConditions !== void 0) {
-    const existing = charRepo.findById(parsed.id);
-    if (!existing) {
-      throw new Error(`Character not found: ${parsed.id}`);
-    }
-    let currentConditions = existing.conditions || [];
-    if (parsed.removeConditions && parsed.removeConditions.length > 0) {
-      const toRemove = new Set(parsed.removeConditions.map((n2) => n2.toLowerCase()));
-      currentConditions = currentConditions.filter((c) => !toRemove.has(c.name.toLowerCase()));
-    }
-    if (parsed.addConditions && parsed.addConditions.length > 0) {
-      for (const newCond of parsed.addConditions) {
-        const existingIdx = currentConditions.findIndex((c) => c.name.toLowerCase() === newCond.name.toLowerCase());
-        if (existingIdx >= 0) {
-          currentConditions[existingIdx] = { ...currentConditions[existingIdx], ...newCond };
-        } else {
-          currentConditions.push(newCond);
-        }
-      }
-    }
-    updateData.conditions = currentConditions;
-  }
-  const updated = charRepo.update(parsed.id, updateData);
-  if (!updated) {
-    throw new Error(`Failed to update character: ${parsed.id}`);
-  }
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify(updated, null, 2)
-    }]
-  };
-}
-async function handleListCharacters(args, _ctx) {
-  const { charRepo } = ensureDb();
-  const parsed = CRUDTools.LIST_CHARACTERS.inputSchema.parse(args);
-  const characters = charRepo.findAll({
-    characterType: parsed.characterType
-  });
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        characters,
-        count: characters.length
-      }, null, 2)
-    }]
-  };
-}
-async function handleDeleteCharacter(args, _ctx) {
-  const { db } = ensureDb();
-  const parsed = CRUDTools.DELETE_CHARACTER.inputSchema.parse(args);
-  const stmt = db.prepare("DELETE FROM characters WHERE id = ?");
-  stmt.run(parsed.id);
-  return {
-    content: [{
-      type: "text",
-      text: JSON.stringify({
-        message: "Character deleted",
-        id: parsed.id
-      }, null, 2)
-    }]
-  };
-}
-
-// dist/server/inventory-tools.js
-init_zod();
-var import_crypto3 = require("crypto");
+// dist/services/starting-equipment.service.js
+var import_crypto2 = require("crypto");
 
 // dist/schema/inventory.js
 init_zod();
@@ -61101,7 +60696,1358 @@ var InventoryRepository = class {
   }
 };
 
+// dist/data/class-starting-data.js
+var EXPLORERS_PACK = [
+  "Backpack",
+  "Bedroll",
+  "Mess Kit",
+  "Tinderbox",
+  "Torches x10",
+  "Rations x10",
+  "Waterskin",
+  "Hempen Rope (50 feet)"
+];
+var DUNGEONEERS_PACK = [
+  "Backpack",
+  "Crowbar",
+  "Hammer",
+  "Pitons x10",
+  "Torches x10",
+  "Tinderbox",
+  "Rations x10",
+  "Waterskin",
+  "Hempen Rope (50 feet)"
+];
+var PRIESTS_PACK = [
+  "Backpack",
+  "Blanket",
+  "Candles x10",
+  "Tinderbox",
+  "Alms Box",
+  "Incense x2",
+  "Censer",
+  "Vestments",
+  "Rations x2",
+  "Waterskin"
+];
+var SCHOLARS_PACK = [
+  "Backpack",
+  "Book of Lore",
+  "Ink",
+  "Ink Pen",
+  "Parchment x10",
+  "Little Bag of Sand",
+  "Small Knife"
+];
+var BURGLAR_PACK = [
+  "Backpack",
+  "Ball Bearings x1000",
+  "String (10 feet)",
+  "Bell",
+  "Candles x5",
+  "Crowbar",
+  "Hammer",
+  "Pitons x10",
+  "Hooded Lantern",
+  "Oil x2",
+  "Rations x5",
+  "Tinderbox",
+  "Waterskin",
+  "Hempen Rope (50 feet)"
+];
+var EquipmentPacks = {
+  explorersPack: EXPLORERS_PACK,
+  dungeoneersPack: DUNGEONEERS_PACK,
+  priestsPack: PRIESTS_PACK,
+  scholarsPack: SCHOLARS_PACK,
+  burglarsPack: BURGLAR_PACK,
+  diplomatsPack: ["Backpack", "Fine Clothes", "Perfume", "Sealing Wax", "Paper x5"],
+  entertainersPack: ["Backpack", "Bedroll", "Costume x2", "Candles x5", "Rations x5", "Waterskin", "Disguise Kit"]
+};
+var FULL_CASTER_SLOTS2 = {
+  1: [2, 0, 0, 0, 0, 0, 0, 0, 0],
+  2: [3, 0, 0, 0, 0, 0, 0, 0, 0],
+  3: [4, 2, 0, 0, 0, 0, 0, 0, 0],
+  4: [4, 3, 0, 0, 0, 0, 0, 0, 0],
+  5: [4, 3, 2, 0, 0, 0, 0, 0, 0],
+  6: [4, 3, 3, 0, 0, 0, 0, 0, 0],
+  7: [4, 3, 3, 1, 0, 0, 0, 0, 0],
+  8: [4, 3, 3, 2, 0, 0, 0, 0, 0],
+  9: [4, 3, 3, 3, 1, 0, 0, 0, 0],
+  10: [4, 3, 3, 3, 2, 0, 0, 0, 0],
+  11: [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  12: [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  13: [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  14: [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  15: [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  16: [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  17: [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  19: [4, 3, 3, 3, 3, 2, 1, 1, 1],
+  20: [4, 3, 3, 3, 3, 2, 2, 1, 1]
+};
+var HALF_CASTER_SLOTS2 = {
+  1: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  2: [2, 0, 0, 0, 0, 0, 0, 0, 0],
+  3: [3, 0, 0, 0, 0, 0, 0, 0, 0],
+  4: [3, 0, 0, 0, 0, 0, 0, 0, 0],
+  5: [4, 2, 0, 0, 0, 0, 0, 0, 0],
+  6: [4, 2, 0, 0, 0, 0, 0, 0, 0],
+  7: [4, 3, 0, 0, 0, 0, 0, 0, 0],
+  8: [4, 3, 0, 0, 0, 0, 0, 0, 0],
+  9: [4, 3, 2, 0, 0, 0, 0, 0, 0],
+  10: [4, 3, 2, 0, 0, 0, 0, 0, 0],
+  11: [4, 3, 3, 0, 0, 0, 0, 0, 0],
+  12: [4, 3, 3, 0, 0, 0, 0, 0, 0],
+  13: [4, 3, 3, 1, 0, 0, 0, 0, 0],
+  14: [4, 3, 3, 1, 0, 0, 0, 0, 0],
+  15: [4, 3, 3, 2, 0, 0, 0, 0, 0],
+  16: [4, 3, 3, 2, 0, 0, 0, 0, 0],
+  17: [4, 3, 3, 3, 1, 0, 0, 0, 0],
+  18: [4, 3, 3, 3, 1, 0, 0, 0, 0],
+  19: [4, 3, 3, 3, 2, 0, 0, 0, 0],
+  20: [4, 3, 3, 3, 2, 0, 0, 0, 0]
+};
+var CLASS_DATA = {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BARBARIAN
+  // ═══════════════════════════════════════════════════════════════════════════
+  barbarian: {
+    hitDice: "d12",
+    startingHP: (conMod) => 12 + conMod,
+    savingThrows: ["strength", "constitution"],
+    armorProficiencies: ["light", "medium", "shields"],
+    weaponProficiencies: ["simple", "martial"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Greataxe"], ["Martial Melee Weapon"]] } },
+      { choose: { count: 1, from: [["Handaxe", "Handaxe"], ["Simple Weapon"]] } },
+      { fixed: [...EXPLORERS_PACK, "Javelin", "Javelin", "Javelin", "Javelin"] }
+    ]
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BARD
+  // ═══════════════════════════════════════════════════════════════════════════
+  bard: {
+    hitDice: "d8",
+    startingHP: (conMod) => 8 + conMod,
+    savingThrows: ["dexterity", "charisma"],
+    armorProficiencies: ["light"],
+    weaponProficiencies: ["simple", "hand crossbows", "longswords", "rapiers", "shortswords"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Rapier"], ["Longsword"], ["Simple Weapon"]] } },
+      { choose: { count: 1, from: [[...DUNGEONEERS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Leather Armor", "Dagger", "Lute"] }
+    ],
+    spellcasting: {
+      ability: "cha",
+      cantripsKnown: [2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+      spellsKnown: [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 15, 16, 18, 19, 19, 20, 22, 22, 22],
+      slotsByLevel: FULL_CASTER_SLOTS2,
+      startingCantrips: ["Vicious Mockery", "Light"],
+      startingSpells: ["Healing Word", "Dissonant Whispers", "Faerie Fire", "Thunderwave"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CLERIC
+  // ═══════════════════════════════════════════════════════════════════════════
+  cleric: {
+    hitDice: "d8",
+    startingHP: (conMod) => 8 + conMod,
+    savingThrows: ["wisdom", "charisma"],
+    armorProficiencies: ["light", "medium", "shields"],
+    weaponProficiencies: ["simple"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Mace"], ["Warhammer"]] } },
+      { choose: { count: 1, from: [["Scale Mail"], ["Leather Armor"], ["Chain Mail"]] } },
+      { choose: { count: 1, from: [["Light Crossbow", "Crossbow Bolts x20"], ["Simple Weapon"]] } },
+      { choose: { count: 1, from: [[...PRIESTS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Shield", "Holy Symbol"] }
+    ],
+    spellcasting: {
+      ability: "wis",
+      cantripsKnown: [3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+      spellsPrepared: true,
+      // WIS mod + cleric level
+      slotsByLevel: FULL_CASTER_SLOTS2,
+      startingCantrips: ["Sacred Flame", "Guidance", "Spare the Dying"],
+      startingSpells: ["Cure Wounds", "Bless", "Shield of Faith", "Guiding Bolt"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DRUID
+  // ═══════════════════════════════════════════════════════════════════════════
+  druid: {
+    hitDice: "d8",
+    startingHP: (conMod) => 8 + conMod,
+    savingThrows: ["intelligence", "wisdom"],
+    armorProficiencies: ["light", "medium", "shields"],
+    weaponProficiencies: ["clubs", "daggers", "darts", "javelins", "maces", "quarterstaffs", "scimitars", "sickles", "slings", "spears"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Shield"], ["Simple Weapon"]] } },
+      { choose: { count: 1, from: [["Scimitar"], ["Simple Melee Weapon"]] } },
+      { fixed: ["Leather Armor", ...EXPLORERS_PACK, "Druidic Focus"] }
+    ],
+    spellcasting: {
+      ability: "wis",
+      cantripsKnown: [2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+      spellsPrepared: true,
+      slotsByLevel: FULL_CASTER_SLOTS2,
+      startingCantrips: ["Produce Flame", "Druidcraft"],
+      startingSpells: ["Entangle", "Healing Word", "Faerie Fire", "Thunderwave"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FIGHTER
+  // ═══════════════════════════════════════════════════════════════════════════
+  fighter: {
+    hitDice: "d10",
+    startingHP: (conMod) => 10 + conMod,
+    savingThrows: ["strength", "constitution"],
+    armorProficiencies: ["light", "medium", "heavy", "shields"],
+    weaponProficiencies: ["simple", "martial"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Chain Mail"], ["Leather Armor", "Longbow", "Arrows x20"]] } },
+      { choose: { count: 1, from: [["Martial Weapon", "Shield"], ["Martial Weapon", "Martial Weapon"]] } },
+      { choose: { count: 1, from: [["Light Crossbow", "Crossbow Bolts x20"], ["Handaxe", "Handaxe"]] } },
+      { choose: { count: 1, from: [[...DUNGEONEERS_PACK], [...EXPLORERS_PACK]] } }
+    ]
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MONK
+  // ═══════════════════════════════════════════════════════════════════════════
+  monk: {
+    hitDice: "d8",
+    startingHP: (conMod) => 8 + conMod,
+    savingThrows: ["strength", "dexterity"],
+    armorProficiencies: [],
+    weaponProficiencies: ["simple", "shortswords"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Shortsword"], ["Simple Weapon"]] } },
+      { choose: { count: 1, from: [[...DUNGEONEERS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Dart", "Dart", "Dart", "Dart", "Dart", "Dart", "Dart", "Dart", "Dart", "Dart"] }
+    ]
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PALADIN
+  // ═══════════════════════════════════════════════════════════════════════════
+  paladin: {
+    hitDice: "d10",
+    startingHP: (conMod) => 10 + conMod,
+    savingThrows: ["wisdom", "charisma"],
+    armorProficiencies: ["light", "medium", "heavy", "shields"],
+    weaponProficiencies: ["simple", "martial"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Martial Weapon", "Shield"], ["Martial Weapon", "Martial Weapon"]] } },
+      { choose: { count: 1, from: [["Javelin", "Javelin", "Javelin", "Javelin", "Javelin"], ["Simple Melee Weapon"]] } },
+      { choose: { count: 1, from: [[...PRIESTS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Chain Mail", "Holy Symbol"] }
+    ],
+    spellcasting: {
+      ability: "cha",
+      cantripsKnown: [],
+      // Paladins don't get cantrips
+      spellsPrepared: true,
+      slotsByLevel: HALF_CASTER_SLOTS2,
+      startingCantrips: [],
+      startingSpells: ["Divine Smite", "Cure Wounds", "Shield of Faith", "Thunderous Smite"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RANGER
+  // ═══════════════════════════════════════════════════════════════════════════
+  ranger: {
+    hitDice: "d10",
+    startingHP: (conMod) => 10 + conMod,
+    savingThrows: ["strength", "dexterity"],
+    armorProficiencies: ["light", "medium", "shields"],
+    weaponProficiencies: ["simple", "martial"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Scale Mail"], ["Leather Armor"]] } },
+      { choose: { count: 1, from: [["Shortsword", "Shortsword"], ["Simple Melee Weapon", "Simple Melee Weapon"]] } },
+      { choose: { count: 1, from: [[...DUNGEONEERS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Longbow", "Arrows x20", "Quiver"] }
+    ],
+    spellcasting: {
+      ability: "wis",
+      cantripsKnown: [],
+      // Rangers don't get cantrips (without Druidic Warrior)
+      spellsKnown: [0, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11],
+      slotsByLevel: HALF_CASTER_SLOTS2,
+      startingCantrips: [],
+      startingSpells: ["Hunter's Mark", "Cure Wounds"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ROGUE
+  // ═══════════════════════════════════════════════════════════════════════════
+  rogue: {
+    hitDice: "d8",
+    startingHP: (conMod) => 8 + conMod,
+    savingThrows: ["dexterity", "intelligence"],
+    armorProficiencies: ["light"],
+    weaponProficiencies: ["simple", "hand crossbows", "longswords", "rapiers", "shortswords"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Rapier"], ["Shortsword"]] } },
+      { choose: { count: 1, from: [["Shortbow", "Quiver", "Arrows x20"], ["Shortsword"]] } },
+      { choose: { count: 1, from: [[...BURGLAR_PACK], [...DUNGEONEERS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Leather Armor", "Dagger", "Dagger", "Thieves' Tools"] }
+    ]
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SORCERER
+  // ═══════════════════════════════════════════════════════════════════════════
+  sorcerer: {
+    hitDice: "d6",
+    startingHP: (conMod) => 6 + conMod,
+    savingThrows: ["constitution", "charisma"],
+    armorProficiencies: [],
+    weaponProficiencies: ["daggers", "darts", "slings", "quarterstaffs", "light crossbows"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Light Crossbow", "Crossbow Bolts x20"], ["Simple Weapon"]] } },
+      { choose: { count: 1, from: [["Component Pouch"], ["Arcane Focus"]] } },
+      { choose: { count: 1, from: [[...DUNGEONEERS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Dagger", "Dagger"] }
+    ],
+    spellcasting: {
+      ability: "cha",
+      cantripsKnown: [4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6],
+      spellsKnown: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15, 15, 15],
+      slotsByLevel: FULL_CASTER_SLOTS2,
+      startingCantrips: ["Fire Bolt", "Ray of Frost", "Prestidigitation", "Light"],
+      startingSpells: ["Magic Missile", "Shield"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WARLOCK
+  // ═══════════════════════════════════════════════════════════════════════════
+  warlock: {
+    hitDice: "d8",
+    startingHP: (conMod) => 8 + conMod,
+    savingThrows: ["wisdom", "charisma"],
+    armorProficiencies: ["light"],
+    weaponProficiencies: ["simple"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Light Crossbow", "Crossbow Bolts x20"], ["Simple Weapon"]] } },
+      { choose: { count: 1, from: [["Component Pouch"], ["Arcane Focus"]] } },
+      { choose: { count: 1, from: [[...SCHOLARS_PACK], [...DUNGEONEERS_PACK]] } },
+      { fixed: ["Leather Armor", "Simple Weapon", "Dagger", "Dagger"] }
+    ],
+    spellcasting: {
+      ability: "cha",
+      cantripsKnown: [2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+      spellsKnown: [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15],
+      // Warlock has pact magic, not standard slots - handled separately
+      slotsByLevel: {
+        1: [1, 0, 0, 0, 0, 0, 0, 0, 0],
+        2: [2, 0, 0, 0, 0, 0, 0, 0, 0],
+        3: [0, 2, 0, 0, 0, 0, 0, 0, 0],
+        4: [0, 2, 0, 0, 0, 0, 0, 0, 0],
+        5: [0, 0, 2, 0, 0, 0, 0, 0, 0],
+        6: [0, 0, 2, 0, 0, 0, 0, 0, 0],
+        7: [0, 0, 0, 2, 0, 0, 0, 0, 0],
+        8: [0, 0, 0, 2, 0, 0, 0, 0, 0],
+        9: [0, 0, 0, 0, 2, 0, 0, 0, 0],
+        10: [0, 0, 0, 0, 2, 0, 0, 0, 0],
+        11: [0, 0, 0, 0, 3, 0, 0, 0, 0],
+        12: [0, 0, 0, 0, 3, 0, 0, 0, 0],
+        13: [0, 0, 0, 0, 3, 0, 0, 0, 0],
+        14: [0, 0, 0, 0, 3, 0, 0, 0, 0],
+        15: [0, 0, 0, 0, 3, 0, 0, 0, 0],
+        16: [0, 0, 0, 0, 3, 0, 0, 0, 0],
+        17: [0, 0, 0, 0, 4, 0, 0, 0, 0],
+        18: [0, 0, 0, 0, 4, 0, 0, 0, 0],
+        19: [0, 0, 0, 0, 4, 0, 0, 0, 0],
+        20: [0, 0, 0, 0, 4, 0, 0, 0, 0]
+      },
+      startingCantrips: ["Eldritch Blast", "Minor Illusion"],
+      startingSpells: ["Hex", "Armor of Agathys"]
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WIZARD
+  // ═══════════════════════════════════════════════════════════════════════════
+  wizard: {
+    hitDice: "d6",
+    startingHP: (conMod) => 6 + conMod,
+    savingThrows: ["intelligence", "wisdom"],
+    armorProficiencies: [],
+    weaponProficiencies: ["daggers", "darts", "slings", "quarterstaffs", "light crossbows"],
+    startingEquipment: [
+      { choose: { count: 1, from: [["Quarterstaff"], ["Dagger"]] } },
+      { choose: { count: 1, from: [["Component Pouch"], ["Arcane Focus"]] } },
+      { choose: { count: 1, from: [[...SCHOLARS_PACK], [...EXPLORERS_PACK]] } },
+      { fixed: ["Spellbook"] }
+    ],
+    spellcasting: {
+      ability: "int",
+      cantripsKnown: [3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+      spellsPrepared: true,
+      // INT mod + wizard level
+      slotsByLevel: FULL_CASTER_SLOTS2,
+      startingCantrips: ["Fire Bolt", "Mage Hand", "Prestidigitation"],
+      startingSpells: ["Magic Missile", "Shield", "Mage Armor", "Sleep", "Detect Magic", "Identify"]
+    }
+  }
+};
+function getClassStartingData(className) {
+  const normalized = className.toLowerCase().trim();
+  return CLASS_DATA[normalized] || null;
+}
+function getDefaultStartingEquipment(className) {
+  const classData = getClassStartingData(className);
+  if (!classData)
+    return [];
+  const equipment = [];
+  for (const choice of classData.startingEquipment) {
+    if (choice.fixed) {
+      equipment.push(...choice.fixed);
+    } else if (choice.choose) {
+      const firstOption = choice.choose.from[0];
+      if (firstOption) {
+        equipment.push(...firstOption);
+      }
+    }
+  }
+  return equipment;
+}
+function getSpellSlots(className, characterLevel) {
+  const classData = getClassStartingData(className);
+  if (!classData?.spellcasting)
+    return [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const level = Math.min(Math.max(characterLevel, 1), 20);
+  return classData.spellcasting.slotsByLevel[level] || [0, 0, 0, 0, 0, 0, 0, 0, 0];
+}
+function isSpellcaster(className) {
+  const classData = getClassStartingData(className);
+  return !!classData?.spellcasting;
+}
+
+// dist/services/starting-equipment.service.js
+function provisionStartingEquipment(db, characterId, className, level = 1, options = {}) {
+  const itemRepo = new ItemRepository(db);
+  const invRepo = new InventoryRepository(db);
+  const result = {
+    itemsGranted: [],
+    spellsGranted: [],
+    cantripsGranted: [],
+    spellSlots: null,
+    pactMagicSlots: null,
+    startingGold: 0,
+    errors: []
+  };
+  const normalizedClass = normalizeClassName(className);
+  const classData = CLASS_DATA[normalizedClass];
+  if (!options.skipEquipment) {
+    const equipmentList = options.customEquipment?.length ? options.customEquipment : classData ? getDefaultStartingEquipment(normalizedClass) : getGenericStartingEquipment();
+    for (const itemName of equipmentList) {
+      try {
+        const itemId = ensureItemExists(itemRepo, itemName);
+        invRepo.addItem(characterId, itemId, 1);
+        result.itemsGranted.push(itemName);
+      } catch (err) {
+        result.errors.push(`Failed to grant "${itemName}": ${err.message}`);
+      }
+    }
+    const goldAmount = options.startingGold ?? (classData?.startingGold ?? 10);
+    try {
+      invRepo.addCurrency(characterId, { gold: goldAmount });
+      result.startingGold = goldAmount;
+    } catch (err) {
+      result.errors.push(`Failed to grant starting gold: ${err.message}`);
+    }
+  }
+  if (!options.skipSpells && classData && isSpellcaster(normalizedClass)) {
+    const slots = getSpellSlots(normalizedClass, level);
+    if (slots) {
+      if (normalizedClass === "warlock") {
+        const slotCount = slots.find((s) => s > 0) || 1;
+        const slotLevel = slots.findIndex((s) => s > 0) + 1;
+        result.pactMagicSlots = { slots: slotCount, level: slotLevel || 1 };
+      } else {
+        result.spellSlots = slots;
+      }
+    }
+    const cantrips = options.customCantrips?.length ? options.customCantrips : classData.startingCantrips || [];
+    result.cantripsGranted = cantrips;
+    const spells = options.customSpells?.length ? options.customSpells : classData.startingSpells || [];
+    result.spellsGranted = spells;
+  }
+  return result;
+}
+function normalizeClassName(className) {
+  const normalized = className.toLowerCase().trim();
+  if (normalized in CLASS_DATA) {
+    return normalized;
+  }
+  const aliases = {
+    "mage": "wizard",
+    "arcane caster": "wizard",
+    "priest": "cleric",
+    "healer": "cleric",
+    "thief": "rogue",
+    "assassin": "rogue",
+    "berserker": "barbarian",
+    "knight": "fighter",
+    "warrior": "fighter",
+    "soldier": "fighter",
+    "nature priest": "druid",
+    "shapeshifter": "druid",
+    "holy warrior": "paladin",
+    "crusader": "paladin",
+    "hunter": "ranger",
+    "scout": "ranger",
+    "wild mage": "sorcerer",
+    "bloodmage": "sorcerer",
+    "hexblade": "warlock",
+    "pact mage": "warlock",
+    "performer": "bard",
+    "skald": "bard",
+    "martial artist": "monk",
+    "mystic": "monk"
+  };
+  if (normalized in aliases) {
+    return aliases[normalized];
+  }
+  for (const knownClass of Object.keys(CLASS_DATA)) {
+    if (normalized.includes(knownClass)) {
+      return knownClass;
+    }
+  }
+  return normalized;
+}
+function getGenericStartingEquipment() {
+  return [
+    "Simple Weapon",
+    "Leather Armor",
+    "Backpack",
+    "Bedroll",
+    "Torch",
+    "Rations (1 day)",
+    "Waterskin"
+  ];
+}
+function ensureItemExists(itemRepo, itemName) {
+  const existing = itemRepo.findByName(itemName);
+  if (existing.length > 0) {
+    return existing[0].id;
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const itemData = getItemDefaults(itemName);
+  const item = {
+    id: (0, import_crypto2.randomUUID)(),
+    name: itemName,
+    description: itemData.description,
+    type: itemData.type,
+    weight: itemData.weight,
+    value: itemData.value,
+    properties: itemData.properties,
+    createdAt: now,
+    updatedAt: now
+  };
+  itemRepo.create(item);
+  return item.id;
+}
+function getItemDefaults(itemName) {
+  const name = itemName.toLowerCase();
+  if (name.includes("sword") || name.includes("blade")) {
+    const isTwoHanded = name.includes("great") || name.includes("two-handed");
+    return {
+      type: "weapon",
+      weight: isTwoHanded ? 6 : 3,
+      value: isTwoHanded ? 50 : 15,
+      description: `A ${itemName.toLowerCase()}.`,
+      properties: {
+        damage: isTwoHanded ? "2d6" : "1d8",
+        damageType: "slashing",
+        versatile: !isTwoHanded
+      }
+    };
+  }
+  if (name.includes("axe")) {
+    const isGreat = name.includes("great");
+    return {
+      type: "weapon",
+      weight: isGreat ? 7 : 4,
+      value: isGreat ? 30 : 10,
+      description: `A ${itemName.toLowerCase()}.`,
+      properties: {
+        damage: isGreat ? "1d12" : "1d8",
+        damageType: "slashing"
+      }
+    };
+  }
+  if (name.includes("bow")) {
+    const isLong = name.includes("long");
+    return {
+      type: "weapon",
+      weight: isLong ? 2 : 1,
+      value: isLong ? 50 : 25,
+      description: `A ${itemName.toLowerCase()}.`,
+      properties: {
+        damage: isLong ? "1d8" : "1d6",
+        damageType: "piercing",
+        range: isLong ? "150/600" : "80/320",
+        ammunition: true
+      }
+    };
+  }
+  if (name.includes("crossbow")) {
+    const isHand = name.includes("hand");
+    const isHeavy = name.includes("heavy");
+    return {
+      type: "weapon",
+      weight: isHand ? 3 : isHeavy ? 18 : 5,
+      value: isHand ? 75 : isHeavy ? 50 : 25,
+      description: `A ${itemName.toLowerCase()}.`,
+      properties: {
+        damage: isHand ? "1d6" : isHeavy ? "1d10" : "1d8",
+        damageType: "piercing",
+        ammunition: true,
+        loading: true
+      }
+    };
+  }
+  if (name.includes("dagger")) {
+    return {
+      type: "weapon",
+      weight: 1,
+      value: 2,
+      description: "A simple dagger.",
+      properties: {
+        damage: "1d4",
+        damageType: "piercing",
+        finesse: true,
+        light: true,
+        thrown: "20/60"
+      }
+    };
+  }
+  if (name.includes("quarterstaff") || name.includes("staff")) {
+    return {
+      type: "weapon",
+      weight: 4,
+      value: 2,
+      description: "A wooden staff.",
+      properties: {
+        damage: "1d6",
+        damageType: "bludgeoning",
+        versatile: "1d8"
+      }
+    };
+  }
+  if (name.includes("mace")) {
+    return {
+      type: "weapon",
+      weight: 4,
+      value: 5,
+      description: "A metal mace.",
+      properties: {
+        damage: "1d6",
+        damageType: "bludgeoning"
+      }
+    };
+  }
+  if (name.includes("javelin")) {
+    return {
+      type: "weapon",
+      weight: 2,
+      value: 0.5,
+      description: "A throwing javelin.",
+      properties: {
+        damage: "1d6",
+        damageType: "piercing",
+        thrown: "30/120"
+      }
+    };
+  }
+  if (name.includes("handaxe")) {
+    return {
+      type: "weapon",
+      weight: 2,
+      value: 5,
+      description: "A small throwing axe.",
+      properties: {
+        damage: "1d6",
+        damageType: "slashing",
+        light: true,
+        thrown: "20/60"
+      }
+    };
+  }
+  if (name.includes("rapier")) {
+    return {
+      type: "weapon",
+      weight: 2,
+      value: 25,
+      description: "A slender thrusting sword.",
+      properties: {
+        damage: "1d8",
+        damageType: "piercing",
+        finesse: true
+      }
+    };
+  }
+  if (name.includes("scimitar")) {
+    return {
+      type: "weapon",
+      weight: 3,
+      value: 25,
+      description: "A curved slashing blade.",
+      properties: {
+        damage: "1d6",
+        damageType: "slashing",
+        finesse: true,
+        light: true
+      }
+    };
+  }
+  if (name.includes("shortbow")) {
+    return {
+      type: "weapon",
+      weight: 2,
+      value: 25,
+      description: "A compact bow.",
+      properties: {
+        damage: "1d6",
+        damageType: "piercing",
+        range: "80/320",
+        ammunition: true
+      }
+    };
+  }
+  if (name.includes("chain mail") || name.includes("chainmail")) {
+    return {
+      type: "armor",
+      weight: 55,
+      value: 75,
+      description: "Heavy armor made of interlocking metal rings.",
+      properties: { ac: 16, stealthDisadvantage: true, strengthRequired: 13 }
+    };
+  }
+  if (name.includes("scale mail")) {
+    return {
+      type: "armor",
+      weight: 45,
+      value: 50,
+      description: "Medium armor of overlapping metal scales.",
+      properties: { ac: 14, maxDexBonus: 2, stealthDisadvantage: true }
+    };
+  }
+  if (name.includes("leather armor") || name === "leather") {
+    return {
+      type: "armor",
+      weight: 10,
+      value: 10,
+      description: "Light armor made of cured leather.",
+      properties: { ac: 11 }
+    };
+  }
+  if (name.includes("studded leather")) {
+    return {
+      type: "armor",
+      weight: 13,
+      value: 45,
+      description: "Leather armor reinforced with metal studs.",
+      properties: { ac: 12 }
+    };
+  }
+  if (name.includes("hide armor") || name === "hide") {
+    return {
+      type: "armor",
+      weight: 12,
+      value: 10,
+      description: "Medium armor made of thick animal hides.",
+      properties: { ac: 12, maxDexBonus: 2 }
+    };
+  }
+  if (name.includes("shield")) {
+    return {
+      type: "armor",
+      weight: 6,
+      value: 10,
+      description: "A wooden or metal shield.",
+      properties: { acBonus: 2 }
+    };
+  }
+  if (name.includes("pack")) {
+    const packItems = getPackContents(name);
+    return {
+      type: "misc",
+      weight: 30,
+      value: 10,
+      description: `An adventuring pack containing: ${packItems.join(", ")}.`,
+      properties: { contains: packItems }
+    };
+  }
+  if (name.includes("arcane focus") || name.includes("component pouch")) {
+    return {
+      type: "misc",
+      weight: 1,
+      value: 10,
+      description: "A spellcasting focus or component pouch.",
+      properties: { spellcastingFocus: true }
+    };
+  }
+  if (name.includes("holy symbol")) {
+    return {
+      type: "misc",
+      weight: 1,
+      value: 5,
+      description: "A divine spellcasting focus.",
+      properties: { spellcastingFocus: true, divine: true }
+    };
+  }
+  if (name.includes("druidic focus")) {
+    return {
+      type: "misc",
+      weight: 1,
+      value: 5,
+      description: "A natural spellcasting focus.",
+      properties: { spellcastingFocus: true, druidic: true }
+    };
+  }
+  if (name.includes("spellbook")) {
+    return {
+      type: "misc",
+      weight: 3,
+      value: 50,
+      description: "A wizard's spellbook for recording spells.",
+      properties: { spellbook: true }
+    };
+  }
+  if (name.includes("lute") || name.includes("drum") || name.includes("flute") || name.includes("horn") || name.includes("instrument")) {
+    return {
+      type: "misc",
+      weight: 2,
+      value: 30,
+      description: "A musical instrument.",
+      properties: { instrument: true, bardFocus: true }
+    };
+  }
+  if (name.includes("thieves' tools") || name.includes("thieves tools")) {
+    return {
+      type: "misc",
+      weight: 1,
+      value: 25,
+      description: "A set of lockpicks and tools for disabling traps.",
+      properties: { proficiencyRequired: true }
+    };
+  }
+  if (name.includes("arrow")) {
+    const match = name.match(/(\d+)/);
+    const count = match ? parseInt(match[1]) : 20;
+    return {
+      type: "misc",
+      weight: 1,
+      value: 1,
+      description: `A quiver of ${count} arrows.`,
+      properties: { ammunition: true, count }
+    };
+  }
+  if (name.includes("bolt")) {
+    const match = name.match(/(\d+)/);
+    const count = match ? parseInt(match[1]) : 20;
+    return {
+      type: "misc",
+      weight: 1.5,
+      value: 1,
+      description: `A case of ${count} crossbow bolts.`,
+      properties: { ammunition: true, count }
+    };
+  }
+  if (name.includes("potion")) {
+    return {
+      type: "consumable",
+      weight: 0.5,
+      value: 50,
+      description: "A magical potion.",
+      properties: {}
+    };
+  }
+  if (name.includes("rations")) {
+    return {
+      type: "consumable",
+      weight: 2,
+      value: 0.5,
+      description: "A day's worth of travel rations.",
+      properties: {}
+    };
+  }
+  return {
+    type: "misc",
+    weight: 1,
+    value: 1,
+    description: `A ${itemName.toLowerCase()}.`,
+    properties: {}
+  };
+}
+function getPackContents(packName) {
+  const name = packName.toLowerCase();
+  if (name.includes("explorer")) {
+    return EquipmentPacks.explorersPack;
+  }
+  if (name.includes("dungeoneer")) {
+    return EquipmentPacks.dungeoneersPack;
+  }
+  if (name.includes("priest")) {
+    return EquipmentPacks.priestsPack;
+  }
+  if (name.includes("scholar")) {
+    return EquipmentPacks.scholarsPack;
+  }
+  if (name.includes("burglar")) {
+    return EquipmentPacks.burglarsPack;
+  }
+  if (name.includes("diplomat")) {
+    return EquipmentPacks.diplomatsPack;
+  }
+  if (name.includes("entertainer")) {
+    return EquipmentPacks.entertainersPack;
+  }
+  return ["Backpack", "Bedroll", "Rations (5 days)", "Waterskin", "Torch"];
+}
+
+// dist/server/crud-tools.js
+function ensureDb() {
+  const dbPath = process.env.NODE_ENV === "test" ? ":memory:" : process.env.RPG_DATA_DIR ? `${process.env.RPG_DATA_DIR}/rpg.db` : "rpg.db";
+  const db = getDb(dbPath);
+  const worldRepo = new WorldRepository(db);
+  const charRepo = new CharacterRepository(db);
+  return { db, worldRepo, charRepo };
+}
+var CRUDTools = {
+  // World tools
+  CREATE_WORLD: {
+    name: "create_world",
+    description: "Create a new world in the database with name, seed, and dimensions.",
+    inputSchema: WorldSchema.omit({ id: true, createdAt: true, updatedAt: true })
+  },
+  GET_WORLD: {
+    name: "get_world",
+    description: "Retrieve a world by ID.",
+    inputSchema: external_exports.object({
+      id: external_exports.string()
+    })
+  },
+  LIST_WORLDS: {
+    name: "list_worlds",
+    description: "List all worlds.",
+    inputSchema: external_exports.object({})
+  },
+  UPDATE_WORLD_ENVIRONMENT: {
+    name: "update_world_environment",
+    description: "Update environmental properties (time, weather, lighting, etc.) for a world.",
+    inputSchema: external_exports.object({
+      id: external_exports.string(),
+      environment: external_exports.object({
+        date: external_exports.string().optional(),
+        timeOfDay: external_exports.string().optional(),
+        season: external_exports.string().optional(),
+        moonPhase: external_exports.string().optional(),
+        weatherConditions: external_exports.string().optional(),
+        temperature: external_exports.string().optional(),
+        lighting: external_exports.string().optional()
+      }).passthrough()
+    })
+  },
+  DELETE_WORLD: {
+    name: "delete_world",
+    description: "Delete a world by ID.",
+    inputSchema: external_exports.object({
+      id: external_exports.string()
+    })
+  },
+  // Character tools
+  CREATE_CHARACTER: {
+    name: "create_character",
+    description: `Create a new character. Only name is required - everything else has sensible defaults.
+
+Character types:
+- pc: Player character (default)
+- npc: Non-player character (ally or neutral)
+- enemy: Hostile creature
+- neutral: Non-hostile, non-ally
+
+Class and race can be ANY string - use standard D&D classes/races or create custom ones.
+Stats can be any positive integer (not limited to 3-18).
+
+Example (minimal - just name):
+{
+  "name": "Mysterious Stranger"
+}
+
+Example (full):
+{
+  "name": "Valeros",
+  "class": "Fighter",
+  "race": "Human",
+  "hp": 20,
+  "maxHp": 20,
+  "ac": 18,
+  "level": 1,
+  "stats": { "str": 16, "dex": 14, "con": 14, "int": 10, "wis": 12, "cha": 10 },
+  "characterType": "pc"
+}
+
+Example (custom class/race):
+{
+  "name": "Whiskers",
+  "class": "Chronomancer",
+  "race": "Mousefolk",
+  "stats": { "str": 6, "dex": 18, "con": 10, "int": 16, "wis": 14, "cha": 12 }
+}`,
+    // Flexible schema - only name required, everything else has defaults
+    inputSchema: external_exports.object({
+      name: external_exports.string().min(1).describe("Character name (required)"),
+      // Class/race can be ANY string - no enum restriction
+      class: external_exports.string().optional().default("Adventurer").describe("Character class - any string allowed (Fighter, Wizard, Chronomancer, Merchant...)"),
+      race: external_exports.string().optional().default("Human").describe("Character race - any string allowed (Human, Elf, Mousefolk, Illithid...)"),
+      background: external_exports.string().optional().default("Folk Hero"),
+      alignment: external_exports.string().optional(),
+      // Stats with no min/max - allow godlike or cursed entities
+      stats: external_exports.object({
+        str: external_exports.number().int().min(0).default(10),
+        dex: external_exports.number().int().min(0).default(10),
+        con: external_exports.number().int().min(0).default(10),
+        int: external_exports.number().int().min(0).default(10),
+        wis: external_exports.number().int().min(0).default(10),
+        cha: external_exports.number().int().min(0).default(10)
+      }).optional().default({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }),
+      // Combat stats with sensible defaults
+      hp: external_exports.number().int().min(1).optional(),
+      maxHp: external_exports.number().int().min(1).optional(),
+      ac: external_exports.number().int().min(0).optional().default(10),
+      level: external_exports.number().int().min(1).optional().default(1),
+      // Type and NPC fields
+      characterType: CharacterTypeSchema.optional().default("pc"),
+      factionId: external_exports.string().optional(),
+      behavior: external_exports.string().optional(),
+      // Spellcasting
+      characterClass: external_exports.string().optional(),
+      knownSpells: external_exports.array(external_exports.string()).optional().default([]),
+      preparedSpells: external_exports.array(external_exports.string()).optional().default([]),
+      // Damage modifiers
+      resistances: external_exports.array(external_exports.string()).optional().default([]),
+      vulnerabilities: external_exports.array(external_exports.string()).optional().default([]),
+      immunities: external_exports.array(external_exports.string()).optional().default([]),
+      // Starting equipment provisioning (default: true for PCs)
+      provisionEquipment: external_exports.boolean().optional().default(true).describe("Auto-grant class-appropriate starting equipment and spells. Set to false for custom/improvised characters."),
+      // Custom equipment override (when provisionEquipment is true but you want specific items)
+      customEquipment: external_exports.array(external_exports.string()).optional().describe("Override default starting equipment with these items (still requires provisionEquipment: true)"),
+      // Starting gold override
+      startingGold: external_exports.number().int().min(0).optional().describe("Override default starting gold amount")
+    })
+  },
+  GET_CHARACTER: {
+    name: "get_character",
+    description: "Retrieve a character by ID.",
+    inputSchema: external_exports.object({
+      id: external_exports.string()
+    })
+  },
+  UPDATE_CHARACTER: {
+    name: "update_character",
+    description: `Update character properties. All fields except id are optional.
+
+For conditions, you can pass an array to SET all conditions (replacing existing), or use addConditions/removeConditions for granular control.`,
+    inputSchema: external_exports.object({
+      id: external_exports.string(),
+      name: external_exports.string().min(1).optional(),
+      race: external_exports.string().optional(),
+      class: external_exports.string().optional(),
+      hp: external_exports.number().int().min(0).optional(),
+      maxHp: external_exports.number().int().min(1).optional(),
+      ac: external_exports.number().int().min(0).optional(),
+      level: external_exports.number().int().min(1).optional(),
+      characterType: CharacterTypeSchema.optional(),
+      stats: external_exports.object({
+        str: external_exports.number().int().min(0).optional(),
+        dex: external_exports.number().int().min(0).optional(),
+        con: external_exports.number().int().min(0).optional(),
+        int: external_exports.number().int().min(0).optional(),
+        wis: external_exports.number().int().min(0).optional(),
+        cha: external_exports.number().int().min(0).optional()
+      }).optional(),
+      // Spellcasting updates
+      knownSpells: external_exports.array(external_exports.string()).optional(),
+      preparedSpells: external_exports.array(external_exports.string()).optional(),
+      cantripsKnown: external_exports.array(external_exports.string()).optional(),
+      spellSlots: SpellSlotsSchema.optional(),
+      pactMagicSlots: PactMagicSlotsSchema.optional(),
+      spellcastingAbility: SpellcastingAbilitySchema.optional(),
+      // Conditions/Status Effects
+      conditions: external_exports.array(external_exports.object({
+        name: external_exports.string(),
+        duration: external_exports.number().int().optional(),
+        source: external_exports.string().optional()
+      })).optional().describe("Replace all conditions with this array"),
+      addConditions: external_exports.array(external_exports.object({
+        name: external_exports.string(),
+        duration: external_exports.number().int().optional(),
+        source: external_exports.string().optional()
+      })).optional().describe("Add these conditions to existing ones"),
+      removeConditions: external_exports.array(external_exports.string()).optional().describe("Remove conditions by name")
+    })
+  },
+  LIST_CHARACTERS: {
+    name: "list_characters",
+    description: "List all characters, optionally filtered by type (pc, npc, enemy, neutral).",
+    inputSchema: external_exports.object({
+      characterType: CharacterTypeSchema.optional()
+    })
+  },
+  DELETE_CHARACTER: {
+    name: "delete_character",
+    description: "Delete a character by ID.",
+    inputSchema: external_exports.object({
+      id: external_exports.string()
+    })
+  }
+};
+async function handleCreateWorld(args, _ctx) {
+  const { worldRepo } = ensureDb();
+  const parsed = CRUDTools.CREATE_WORLD.inputSchema.parse(args);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const world = {
+    ...parsed,
+    id: (0, import_crypto3.randomUUID)(),
+    createdAt: now,
+    updatedAt: now
+  };
+  worldRepo.create(world);
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(world, null, 2)
+    }]
+  };
+}
+async function handleGetWorld(args, _ctx) {
+  const { worldRepo } = ensureDb();
+  const parsed = CRUDTools.GET_WORLD.inputSchema.parse(args);
+  const world = worldRepo.findById(parsed.id);
+  if (!world) {
+    throw new Error(`World not found: ${parsed.id}`);
+  }
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(world, null, 2)
+    }]
+  };
+}
+async function handleUpdateWorldEnvironment(args, _ctx) {
+  const { worldRepo } = ensureDb();
+  const parsed = CRUDTools.UPDATE_WORLD_ENVIRONMENT.inputSchema.parse(args);
+  const updated = worldRepo.updateEnvironment(parsed.id, parsed.environment);
+  if (!updated) {
+    throw new Error(`World not found: ${parsed.id}`);
+  }
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(updated, null, 2)
+    }]
+  };
+}
+async function handleListWorlds(args, _ctx) {
+  const { worldRepo } = ensureDb();
+  CRUDTools.LIST_WORLDS.inputSchema.parse(args);
+  const worlds = worldRepo.findAll();
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        worlds,
+        count: worlds.length
+      }, null, 2)
+    }]
+  };
+}
+async function handleDeleteWorld(args, _ctx) {
+  const { worldRepo } = ensureDb();
+  const parsed = CRUDTools.DELETE_WORLD.inputSchema.parse(args);
+  worldRepo.delete(parsed.id);
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        message: "World deleted",
+        id: parsed.id
+      }, null, 2)
+    }]
+  };
+}
+async function handleCreateCharacter(args, _ctx) {
+  const { db, charRepo } = ensureDb();
+  const parsed = CRUDTools.CREATE_CHARACTER.inputSchema.parse(args);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const className = parsed.characterClass || parsed.class || "Adventurer";
+  const conModifier = Math.floor(((parsed.stats?.con ?? 10) - 10) / 2);
+  const baseHp = Math.max(1, 8 + conModifier);
+  const hp = parsed.hp ?? baseHp;
+  const maxHp = parsed.maxHp ?? hp;
+  const characterId = (0, import_crypto3.randomUUID)();
+  let provisioningResult = null;
+  const shouldProvision = parsed.provisionEquipment !== false && (parsed.characterType === "pc" || parsed.characterType === void 0);
+  if (shouldProvision) {
+    provisioningResult = provisionStartingEquipment(db, characterId, className, parsed.level ?? 1, {
+      customEquipment: parsed.customEquipment,
+      customSpells: parsed.knownSpells?.length ? parsed.knownSpells : void 0,
+      startingGold: parsed.startingGold
+    });
+  }
+  const character = {
+    ...parsed,
+    id: characterId,
+    hp,
+    maxHp,
+    // Map 'class' to 'characterClass' for DB compatibility
+    characterClass: className,
+    // Merge provisioned spells with any explicitly provided
+    knownSpells: provisioningResult?.spellsGranted.length ? [.../* @__PURE__ */ new Set([...parsed.knownSpells || [], ...provisioningResult.spellsGranted])] : parsed.knownSpells || [],
+    cantripsKnown: provisioningResult?.cantripsGranted.length ? [.../* @__PURE__ */ new Set([...parsed.cantripsKnown || [], ...provisioningResult.cantripsGranted])] : parsed.cantripsKnown || [],
+    spellSlots: provisioningResult?.spellSlots || void 0,
+    pactMagicSlots: provisioningResult?.pactMagicSlots || void 0,
+    createdAt: now,
+    updatedAt: now
+  };
+  charRepo.create(character);
+  const response = { ...character };
+  if (provisioningResult) {
+    response._provisioning = {
+      equipmentGranted: provisioningResult.itemsGranted,
+      spellsGranted: provisioningResult.spellsGranted,
+      cantripsGranted: provisioningResult.cantripsGranted,
+      startingGold: provisioningResult.startingGold,
+      errors: provisioningResult.errors.length > 0 ? provisioningResult.errors : void 0
+    };
+  }
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(response, null, 2)
+    }]
+  };
+}
+async function handleGetCharacter(args, _ctx) {
+  const { charRepo } = ensureDb();
+  const parsed = CRUDTools.GET_CHARACTER.inputSchema.parse(args);
+  const character = charRepo.findById(parsed.id);
+  if (!character) {
+    throw new Error(`Character not found: ${parsed.id}`);
+  }
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(character, null, 2)
+    }]
+  };
+}
+async function handleUpdateCharacter(args, _ctx) {
+  const { charRepo } = ensureDb();
+  const parsed = CRUDTools.UPDATE_CHARACTER.inputSchema.parse(args);
+  const updateData = {};
+  if (parsed.name !== void 0)
+    updateData.name = parsed.name;
+  if (parsed.race !== void 0)
+    updateData.race = parsed.race;
+  if (parsed.class !== void 0)
+    updateData.characterClass = parsed.class;
+  if (parsed.hp !== void 0)
+    updateData.hp = parsed.hp;
+  if (parsed.maxHp !== void 0)
+    updateData.maxHp = parsed.maxHp;
+  if (parsed.ac !== void 0)
+    updateData.ac = parsed.ac;
+  if (parsed.level !== void 0)
+    updateData.level = parsed.level;
+  if (parsed.characterType !== void 0)
+    updateData.characterType = parsed.characterType;
+  if (parsed.stats !== void 0)
+    updateData.stats = parsed.stats;
+  if (parsed.knownSpells !== void 0)
+    updateData.knownSpells = parsed.knownSpells;
+  if (parsed.preparedSpells !== void 0)
+    updateData.preparedSpells = parsed.preparedSpells;
+  if (parsed.cantripsKnown !== void 0)
+    updateData.cantripsKnown = parsed.cantripsKnown;
+  if (parsed.spellSlots !== void 0)
+    updateData.spellSlots = parsed.spellSlots;
+  if (parsed.pactMagicSlots !== void 0)
+    updateData.pactMagicSlots = parsed.pactMagicSlots;
+  if (parsed.spellcastingAbility !== void 0)
+    updateData.spellcastingAbility = parsed.spellcastingAbility;
+  if (parsed.conditions !== void 0) {
+    updateData.conditions = parsed.conditions;
+  } else if (parsed.addConditions !== void 0 || parsed.removeConditions !== void 0) {
+    const existing = charRepo.findById(parsed.id);
+    if (!existing) {
+      throw new Error(`Character not found: ${parsed.id}`);
+    }
+    let currentConditions = existing.conditions || [];
+    if (parsed.removeConditions && parsed.removeConditions.length > 0) {
+      const toRemove = new Set(parsed.removeConditions.map((n2) => n2.toLowerCase()));
+      currentConditions = currentConditions.filter((c) => !toRemove.has(c.name.toLowerCase()));
+    }
+    if (parsed.addConditions && parsed.addConditions.length > 0) {
+      for (const newCond of parsed.addConditions) {
+        const existingIdx = currentConditions.findIndex((c) => c.name.toLowerCase() === newCond.name.toLowerCase());
+        if (existingIdx >= 0) {
+          currentConditions[existingIdx] = { ...currentConditions[existingIdx], ...newCond };
+        } else {
+          currentConditions.push(newCond);
+        }
+      }
+    }
+    updateData.conditions = currentConditions;
+  }
+  const updated = charRepo.update(parsed.id, updateData);
+  if (!updated) {
+    throw new Error(`Failed to update character: ${parsed.id}`);
+  }
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify(updated, null, 2)
+    }]
+  };
+}
+async function handleListCharacters(args, _ctx) {
+  const { charRepo } = ensureDb();
+  const parsed = CRUDTools.LIST_CHARACTERS.inputSchema.parse(args);
+  const characters = charRepo.findAll({
+    characterType: parsed.characterType
+  });
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        characters,
+        count: characters.length
+      }, null, 2)
+    }]
+  };
+}
+async function handleDeleteCharacter(args, _ctx) {
+  const { db } = ensureDb();
+  const parsed = CRUDTools.DELETE_CHARACTER.inputSchema.parse(args);
+  const stmt = db.prepare("DELETE FROM characters WHERE id = ?");
+  stmt.run(parsed.id);
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        message: "Character deleted",
+        id: parsed.id
+      }, null, 2)
+    }]
+  };
+}
+
 // dist/server/inventory-tools.js
+init_zod();
+var import_crypto4 = require("crypto");
 function ensureDb2() {
   const dbPath = process.env.NODE_ENV === "test" ? ":memory:" : process.env.RPG_DATA_DIR ? `${process.env.RPG_DATA_DIR}/rpg.db` : "rpg.db";
   const db = getDb(dbPath);
@@ -61234,7 +62180,7 @@ async function handleCreateItemTemplate(args, _ctx) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const item = {
     ...parsed,
-    id: (0, import_crypto3.randomUUID)(),
+    id: (0, import_crypto4.randomUUID)(),
     createdAt: now,
     updatedAt: now
   };
@@ -61493,7 +62439,7 @@ async function handleGetInventoryDetailed(args, _ctx) {
 
 // dist/server/quest-tools.js
 init_zod();
-var import_crypto4 = require("crypto");
+var import_crypto5 = require("crypto");
 
 // dist/schema/quest.js
 init_zod();
@@ -61822,14 +62768,14 @@ async function handleCreateQuest(args, _ctx) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const objectives = parsed.objectives.map((obj) => ({
     ...obj,
-    id: obj.id || (0, import_crypto4.randomUUID)(),
+    id: obj.id || (0, import_crypto5.randomUUID)(),
     current: obj.current ?? 0,
     completed: obj.completed ?? false
   }));
   const quest = {
     ...parsed,
     objectives,
-    id: (0, import_crypto4.randomUUID)(),
+    id: (0, import_crypto5.randomUUID)(),
     createdAt: now,
     updatedAt: now
   };
@@ -62679,7 +63625,7 @@ var CalculationRepository = class {
 };
 
 // dist/server/math-tools.js
-var import_crypto5 = require("crypto");
+var import_crypto6 = require("crypto");
 function getRepo() {
   const db = getDb(process.env.NODE_ENV === "test" ? ":memory:" : "rpg.db");
   return { repo: new CalculationRepository(db), db };
@@ -62746,7 +63692,7 @@ async function handleDiceRoll(args) {
   const exporter = new ExportEngine();
   const result = engine.roll(args.expression);
   const calculation = {
-    id: (0, import_crypto5.randomUUID)(),
+    id: (0, import_crypto6.randomUUID)(),
     sessionId: args.sessionId,
     ...result,
     seed: args.seed || result.seed
@@ -62779,7 +63725,7 @@ async function handleProbabilityCalculate(args) {
     metadata: { type: "probability", probability: prob, expectedValue: ev }
   };
   const calculation = {
-    id: (0, import_crypto5.randomUUID)(),
+    id: (0, import_crypto6.randomUUID)(),
     sessionId: args.sessionId,
     ...result
   };
@@ -62800,7 +63746,7 @@ async function handleAlgebraSolve(args) {
   const exporter = new ExportEngine();
   const result = engine.solve(args.equation, args.variable || "x");
   const calculation = {
-    id: (0, import_crypto5.randomUUID)(),
+    id: (0, import_crypto6.randomUUID)(),
     sessionId: args.sessionId,
     ...result
   };
@@ -62821,7 +63767,7 @@ async function handleAlgebraSimplify(args) {
   const exporter = new ExportEngine();
   const result = engine.simplify(args.expression);
   const calculation = {
-    id: (0, import_crypto5.randomUUID)(),
+    id: (0, import_crypto6.randomUUID)(),
     sessionId: args.sessionId,
     ...result
   };
@@ -62842,7 +63788,7 @@ async function handlePhysicsProjectile(args) {
   const exporter = new ExportEngine();
   const result = engine.projectile(args.velocity, args.angle, args.gravity, 10, args.height);
   const calculation = {
-    id: (0, import_crypto5.randomUUID)(),
+    id: (0, import_crypto6.randomUUID)(),
     sessionId: args.sessionId,
     ...result
   };
@@ -64067,7 +65013,7 @@ async function handleTurnManagementTool(name, args) {
 
 // dist/server/secret-tools.js
 init_zod();
-var import_crypto6 = require("crypto");
+var import_crypto7 = require("crypto");
 
 // dist/schema/secret.js
 init_zod();
@@ -64639,7 +65585,7 @@ async function handleCreateSecret(args, _ctx) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const secret = {
     ...parsed,
-    id: (0, import_crypto6.randomUUID)(),
+    id: (0, import_crypto7.randomUUID)(),
     revealed: false,
     createdAt: now,
     updatedAt: now
@@ -64921,7 +65867,7 @@ function generateRevealNarration(secret) {
 }
 
 // dist/server/party-tools.js
-var import_crypto7 = require("crypto");
+var import_crypto8 = require("crypto");
 init_zod();
 
 // dist/storage/repos/party.repo.js
@@ -65448,7 +66394,7 @@ async function handleCreateParty(args, _ctx) {
   const parsed = PartyTools.CREATE_PARTY.inputSchema.parse(args);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const party = {
-    id: (0, import_crypto7.randomUUID)(),
+    id: (0, import_crypto8.randomUUID)(),
     name: parsed.name,
     description: parsed.description,
     worldId: parsed.worldId,
@@ -65469,7 +66415,7 @@ async function handleCreateParty(args, _ctx) {
         continue;
       }
       const member = {
-        id: (0, import_crypto7.randomUUID)(),
+        id: (0, import_crypto8.randomUUID)(),
         partyId: party.id,
         characterId: memberInput.characterId,
         role: memberInput.role || "member",
@@ -65598,7 +66544,7 @@ async function handleAddPartyMember(args, _ctx) {
   }
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const member = {
-    id: (0, import_crypto7.randomUUID)(),
+    id: (0, import_crypto8.randomUUID)(),
     partyId: parsed.partyId,
     characterId: parsed.characterId,
     role: parsed.role || "member",
@@ -66256,7 +67202,7 @@ DC = 10 or half damage (whichever is higher)`;
 
 // dist/server/scroll-tools.js
 init_zod();
-var import_crypto8 = require("crypto");
+var import_crypto9 = require("crypto");
 init_character_repo();
 
 // dist/schema/scroll.js
@@ -66371,8 +67317,8 @@ function calculateScrollValue(spellLevel) {
 // dist/engine/magic/scroll.js
 function validateScrollUse(character, scrollProperties) {
   const { spellLevel, spellClass } = scrollProperties;
-  const isSpellcaster = character.maxSpellLevel !== void 0 && character.maxSpellLevel > 0;
-  if (!isSpellcaster) {
+  const isSpellcaster2 = character.maxSpellLevel !== void 0 && character.maxSpellLevel > 0;
+  if (!isSpellcaster2) {
     const checkDC = 10 + spellLevel;
     return {
       requiresCheck: true,
@@ -66669,7 +67615,7 @@ async function handleCreateSpellScroll(args, _ctx) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const scroll = {
     ...scrollData,
-    id: (0, import_crypto8.randomUUID)(),
+    id: (0, import_crypto9.randomUUID)(),
     createdAt: now,
     updatedAt: now
   };
@@ -72541,7 +73487,7 @@ async function handleMoveCharacterToRoom(args, _ctx) {
 }
 
 // dist/server/batch-tools.js
-var import_crypto10 = require("crypto");
+var import_crypto11 = require("crypto");
 init_character_repo();
 init_party();
 init_zod();
@@ -72669,7 +73615,7 @@ async function handleBatchCreateCharacters(args, _ctx) {
       const maxHp = charData.maxHp ?? hp;
       const character = {
         ...charData,
-        id: (0, import_crypto10.randomUUID)(),
+        id: (0, import_crypto11.randomUUID)(),
         stats,
         hp,
         maxHp,
@@ -72710,7 +73656,7 @@ async function handleBatchCreateNpcs(args, _ctx) {
   for (const npcData of parsed.npcs) {
     try {
       const npc = {
-        id: (0, import_crypto10.randomUUID)(),
+        id: (0, import_crypto11.randomUUID)(),
         name: npcData.name,
         race: npcData.race,
         characterClass: npcData.role,

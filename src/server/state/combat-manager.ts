@@ -21,6 +21,35 @@ export class CombatManager {
     list(): string[] {
         return Array.from(this.encounters.keys());
     }
+
+    /**
+     * Check if a character is participating in any active encounter
+     * Used to prevent resting during combat
+     */
+    isCharacterInCombat(characterId: string): boolean {
+        for (const engine of this.encounters.values()) {
+            const state = engine.getState();
+            if (state?.participants.some(p => p.id === characterId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get list of encounter IDs that a character is participating in
+     * Useful for error messages
+     */
+    getEncountersForCharacter(characterId: string): string[] {
+        const encounterIds: string[] = [];
+        for (const [id, engine] of this.encounters.entries()) {
+            const state = engine.getState();
+            if (state?.participants.some(p => p.id === characterId)) {
+                encounterIds.push(id);
+            }
+        }
+        return encounterIds;
+    }
 }
 
 // Singleton for server lifetime

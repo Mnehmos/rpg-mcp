@@ -264,7 +264,7 @@ export function canCastSpells(character: Character): { canCast: boolean; reason?
 
     // Check for incapacitating conditions
     const conditions = character.conditions || [];
-    if (conditions.includes('INCAPACITATED') || conditions.includes('STUNNED') || conditions.includes('PARALYZED') || conditions.includes('UNCONSCIOUS')) {
+    if (conditions.some(c => c.name === 'INCAPACITATED') || conditions.some(c => c.name === 'STUNNED') || conditions.some(c => c.name === 'PARALYZED') || conditions.some(c => c.name === 'UNCONSCIOUS')) {
         return {
             canCast: false,
             reason: 'Cannot take actions while incapacitated'
@@ -422,7 +422,7 @@ export function validateSpellCast(
     const conditions = character.conditions || [];
 
     // Check for silence (blocks verbal component spells)
-    if (conditions.includes('SILENCED') && spell.components.verbal) {
+    if (conditions.some(c => c.name === 'SILENCED') && spell.components.verbal) {
         return {
             valid: false,
             error: { code: 'SILENCED', message: 'Cannot cast spells with verbal components while silenced' }

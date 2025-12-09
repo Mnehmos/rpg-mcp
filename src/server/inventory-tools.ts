@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { ItemRepository } from '../storage/repos/item.repo.js';
 import { InventoryRepository } from '../storage/repos/inventory.repo.js';
+import { CharacterRepository } from '../storage/repos/character.repo.js';
 import { ItemSchema, INVENTORY_LIMITS } from '../schema/inventory.js';
 import { getDb } from '../storage/index.js';
 import { SessionContext } from './types.js';
@@ -15,7 +16,8 @@ function ensureDb() {
     const db = getDb(dbPath);
     const itemRepo = new ItemRepository(db);
     const inventoryRepo = new InventoryRepository(db);
-    return { itemRepo, inventoryRepo };
+    const charRepo = new CharacterRepository(db);
+    return { itemRepo, inventoryRepo, charRepo };
 }
 
 export const InventoryTools = {
@@ -257,7 +259,7 @@ export async function handleRemoveItem(args: unknown, _ctx: SessionContext) {
 }
 
 export async function handleEquipItem(args: unknown, _ctx: SessionContext) {
-    const { inventoryRepo } = ensureDb();
+    const { inventoryRepo, itemRepo, charRepo } = ensureDb();
     const parsed = InventoryTools.EQUIP_ITEM.inputSchema.parse(args);
 
     // Verify ownership first
@@ -268,7 +270,47 @@ export async function handleEquipItem(args: unknown, _ctx: SessionContext) {
         throw new Error(`Character does not own item ${parsed.itemId}`);
     }
 
+    // Get item details for AC calculation
+    const item = itemRepo.findById(parsed.itemId);
+    if (!item) {
+        throw new Error(`Item not found: ${parsed.itemId}`);
+    }
+
     inventoryRepo.equipItem(parsed.characterId, parsed.itemId, parsed.slot);
+
+    // Update character AC if item has AC properties
+    const character = charRepo.findById(parsed.characterId);
+    if (character && item.properties) {
+        const props = item.properties as Record<string, unknown>;
+        let newAc = character.ac;
+        let acMessage = '';
+
+        // Shield: adds acBonus to current AC
+        if (props.acBonus && typeof props.acBonus === 'number') {
+            newAc = character.ac + props.acBonus;
+            acMessage = ` AC increased by ${props.acBonus} (now ${newAc})`;
+        }
+        
+        // Armor: sets base AC (may include DEX bonus in calculation)
+        if (props.baseAC && typeof props.baseAC === 'number' && parsed.slot === 'armor') {
+            const dexMod = Math.floor((character.stats.dex - 10) / 2);
+            const maxDexBonus = props.maxDexBonus !== undefined ? Number(props.maxDexBonus) : 99;
+            const effectiveDexBonus = Math.min(dexMod, maxDexBonus);
+            newAc = props.baseAC + (maxDexBonus > 0 ? effectiveDexBonus : 0);
+            acMessage = ` AC set to ${newAc} (base ${props.baseAC}${maxDexBonus < 99 ? ` + DEX max ${maxDexBonus}` : ' + DEX'})`;
+        }
+
+        if (newAc !== character.ac) {
+            charRepo.update(parsed.characterId, { ac: newAc });
+        }
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: `Equipped ${item.name} in slot ${parsed.slot}.${acMessage}`
+            }]
+        };
+    }
 
     return {
         content: [{
@@ -279,10 +321,48 @@ export async function handleEquipItem(args: unknown, _ctx: SessionContext) {
 }
 
 export async function handleUnequipItem(args: unknown, _ctx: SessionContext) {
-    const { inventoryRepo } = ensureDb();
+    const { inventoryRepo, itemRepo, charRepo } = ensureDb();
     const parsed = InventoryTools.UNEQUIP_ITEM.inputSchema.parse(args);
 
+    // Get item details before unequipping for AC calculation
+    const item = itemRepo.findById(parsed.itemId);
+    const inventory = inventoryRepo.getInventory(parsed.characterId);
+    const equippedItem = inventory.items.find(i => i.itemId === parsed.itemId && i.equipped);
+    const slot = equippedItem?.slot;
+
     inventoryRepo.unequipItem(parsed.characterId, parsed.itemId);
+
+    // Update character AC if item had AC properties
+    const character = charRepo.findById(parsed.characterId);
+    if (character && item?.properties) {
+        const props = item.properties as Record<string, unknown>;
+        let newAc = character.ac;
+        let acMessage = '';
+
+        // Shield: subtract acBonus from current AC
+        if (props.acBonus && typeof props.acBonus === 'number') {
+            newAc = Math.max(10, character.ac - props.acBonus); // Minimum AC of 10
+            acMessage = ` AC decreased by ${props.acBonus} (now ${newAc})`;
+        }
+        
+        // Armor: revert to base 10 + DEX
+        if (props.baseAC && typeof props.baseAC === 'number' && slot === 'armor') {
+            const dexMod = Math.floor((character.stats.dex - 10) / 2);
+            newAc = 10 + dexMod; // Unarmored AC
+            acMessage = ` AC reverted to unarmored (${newAc})`;
+        }
+
+        if (newAc !== character.ac) {
+            charRepo.update(parsed.characterId, { ac: newAc });
+        }
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: `Unequipped ${item.name}.${acMessage}`
+            }]
+        };
+    }
 
     return {
         content: [{

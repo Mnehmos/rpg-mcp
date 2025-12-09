@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { SessionContext } from './types.js';
 import { getDb } from '../storage/index.js';
 import { CharacterRepository } from '../storage/repos/character.repo.js';
+import { getCombatManager } from './state/combat-manager.js';
 
 // CRIT-002: Import spell slot recovery functions
 import { restoreAllSpellSlots, restorePactSlots, getSpellcastingConfig } from '../engine/magic/spell-validator.js';
@@ -65,6 +66,13 @@ function getHitDieSize(_characterId: string): number {
 export async function handleTakeLongRest(args: unknown, _ctx: SessionContext) {
     const { characterRepo } = ensureDb();
     const parsed = RestTools.TAKE_LONG_REST.inputSchema.parse(args);
+
+    // Combat validation - cannot rest while in combat
+    const combatManager = getCombatManager();
+    if (combatManager.isCharacterInCombat(parsed.characterId)) {
+        const encounters = combatManager.getEncountersForCharacter(parsed.characterId);
+        throw new Error(`Cannot take a long rest while in combat! Character is currently in encounter: ${encounters.join(', ')}`);
+    }
 
     const character = characterRepo.findById(parsed.characterId);
     if (!character) {
@@ -136,6 +144,13 @@ export async function handleTakeLongRest(args: unknown, _ctx: SessionContext) {
 export async function handleTakeShortRest(args: unknown, _ctx: SessionContext) {
     const { characterRepo } = ensureDb();
     const parsed = RestTools.TAKE_SHORT_REST.inputSchema.parse(args);
+
+    // Combat validation - cannot rest while in combat
+    const combatManager = getCombatManager();
+    if (combatManager.isCharacterInCombat(parsed.characterId)) {
+        const encounters = combatManager.getEncountersForCharacter(parsed.characterId);
+        throw new Error(`Cannot take a short rest while in combat! Character is currently in encounter: ${encounters.join(', ')}`);
+    }
 
     const character = characterRepo.findById(parsed.characterId);
     if (!character) {
