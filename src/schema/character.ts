@@ -83,6 +83,18 @@ export const CharacterSchema = z.object({
     immunities: z.array(z.string()).optional().default([])
         .describe('Damage types that deal no damage'),
 
+    // Skill and Save Proficiencies
+    skillProficiencies: z.array(z.enum([
+        'acrobatics', 'animal_handling', 'arcana', 'athletics', 'deception',
+        'history', 'insight', 'intimidation', 'investigation', 'medicine',
+        'nature', 'perception', 'performance', 'persuasion', 'religion',
+        'sleight_of_hand', 'stealth', 'survival'
+    ])).optional().default([]).describe('Skills the character is proficient in'),
+    saveProficiencies: z.array(z.enum(['str', 'dex', 'con', 'int', 'wis', 'cha']))
+        .optional().default([]).describe('Saving throws the character is proficient in'),
+    expertise: z.array(z.string()).optional().default([])
+        .describe('Skills with double proficiency bonus (rogues, bards)'),
+
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
 });

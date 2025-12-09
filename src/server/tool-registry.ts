@@ -32,6 +32,7 @@ import { BatchTools, handleBatchCreateCharacters, handleBatchCreateNpcs, handleB
 import { WorkflowTools, handleExecuteWorkflow, handleListTemplates, handleGetTemplate } from './workflow-tools.js';
 import { EventInboxTools, handlePollEvents, handlePushEvent, handleGetEventHistory, handleGetPendingCount } from './event-inbox-tools.js';
 import { ContextTools, handleGetNarrativeContext } from './context-tools.js';
+import { SkillCheckTools, handleRollSkillCheck, handleRollAbilityCheck, handleRollSavingThrow } from './skill-check-tools.js';
 
 // Helper to create metadata
 // deferLoading defaults to true (most tools should be deferred)
@@ -1307,6 +1308,29 @@ export function buildToolRegistry(): ToolRegistry {
         ['Narrative context aggregation'], true, 'high'),
       schema: ContextTools.GET_NARRATIVE_CONTEXT.inputSchema,
       handler: handleGetNarrativeContext
+    },
+
+    // === SKILL CHECK TOOLS ===
+    [SkillCheckTools.ROLL_SKILL_CHECK.name]: {
+      metadata: meta(SkillCheckTools.ROLL_SKILL_CHECK.name, SkillCheckTools.ROLL_SKILL_CHECK.description, 'math',
+        ['skill', 'check', 'roll', 'd20', 'perception', 'stealth', 'athletics', 'proficiency'],
+        ['Stat-based skill checks', 'Proficiency/expertise handling', 'Advantage/disadvantage'], false, 'low', false),
+      schema: SkillCheckTools.ROLL_SKILL_CHECK.inputSchema,
+      handler: handleRollSkillCheck
+    },
+    [SkillCheckTools.ROLL_ABILITY_CHECK.name]: {
+      metadata: meta(SkillCheckTools.ROLL_ABILITY_CHECK.name, SkillCheckTools.ROLL_ABILITY_CHECK.description, 'math',
+        ['ability', 'check', 'roll', 'd20', 'str', 'dex', 'con', 'int', 'wis', 'cha'],
+        ['Raw ability checks', 'No skill proficiency'], false, 'low', false),
+      schema: SkillCheckTools.ROLL_ABILITY_CHECK.inputSchema,
+      handler: handleRollAbilityCheck
+    },
+    [SkillCheckTools.ROLL_SAVING_THROW.name]: {
+      metadata: meta(SkillCheckTools.ROLL_SAVING_THROW.name, SkillCheckTools.ROLL_SAVING_THROW.description, 'math',
+        ['save', 'saving', 'throw', 'roll', 'd20', 'reflex', 'fortitude', 'will'],
+        ['Saving throws', 'Save proficiency handling', 'DC comparison'], false, 'low', false),
+      schema: SkillCheckTools.ROLL_SAVING_THROW.inputSchema,
+      handler: handleRollSavingThrow
     }
     // Note: search_tools and load_tool_schema are registered separately in index.ts with full handlers
   };

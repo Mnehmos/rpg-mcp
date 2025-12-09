@@ -12179,7 +12179,11 @@ var init_character = __esm({
       spellAttackBonus: external_exports.number().int().optional(),
       concentratingOn: external_exports.string().nullable().optional().default(null),
       activeSpells: external_exports.array(external_exports.string()).optional().default([]),
-      conditions: external_exports.array(external_exports.string()).optional().default([]),
+      conditions: external_exports.array(external_exports.object({
+        name: external_exports.string().describe("Condition name (e.g., Poisoned, Frightened)"),
+        duration: external_exports.number().int().optional().describe("Duration in rounds"),
+        source: external_exports.string().optional().describe("Source of the condition")
+      })).optional().default([]),
       position: external_exports.object({
         x: external_exports.number(),
         y: external_exports.number()
@@ -56378,6 +56382,33 @@ var CombatManager = class {
   list() {
     return Array.from(this.encounters.keys());
   }
+  /**
+   * Check if a character is participating in any active encounter
+   * Used to prevent resting during combat
+   */
+  isCharacterInCombat(characterId) {
+    for (const engine of this.encounters.values()) {
+      const state = engine.getState();
+      if (state?.participants.some((p) => p.id === characterId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Get list of encounter IDs that a character is participating in
+   * Useful for error messages
+   */
+  getEncountersForCharacter(characterId) {
+    const encounterIds = [];
+    for (const [id, engine] of this.encounters.entries()) {
+      const state = engine.getState();
+      if (state?.participants.some((p) => p.id === characterId)) {
+        encounterIds.push(id);
+      }
+    }
+    return encounterIds;
+  }
 };
 var instance2 = null;
 function getCombatManager() {
@@ -57388,7 +57419,7 @@ function canCastSpells(character) {
     };
   }
   const conditions = character.conditions || [];
-  if (conditions.includes("INCAPACITATED") || conditions.includes("STUNNED") || conditions.includes("PARALYZED") || conditions.includes("UNCONSCIOUS")) {
+  if (conditions.some((c) => c.name === "INCAPACITATED") || conditions.some((c) => c.name === "STUNNED") || conditions.some((c) => c.name === "PARALYZED") || conditions.some((c) => c.name === "UNCONSCIOUS")) {
     return {
       canCast: false,
       reason: "Cannot take actions while incapacitated"
@@ -57499,7 +57530,7 @@ function validateSpellCast(character, spellName, requestedSlotLevel) {
     };
   }
   const conditions = character.conditions || [];
-  if (conditions.includes("SILENCED") && spell.components.verbal) {
+  if (conditions.some((c) => c.name === "SILENCED") && spell.components.verbal) {
     return {
       valid: false,
       error: { code: "SILENCED", message: "Cannot cast spells with verbal components while silenced" }
@@ -62048,12 +62079,14 @@ async function handleDeleteCharacter(args, _ctx) {
 // dist/server/inventory-tools.js
 init_zod();
 var import_crypto4 = require("crypto");
+init_character_repo();
 function ensureDb2() {
   const dbPath = process.env.NODE_ENV === "test" ? ":memory:" : process.env.RPG_DATA_DIR ? `${process.env.RPG_DATA_DIR}/rpg.db` : "rpg.db";
   const db = getDb(dbPath);
   const itemRepo = new ItemRepository(db);
   const inventoryRepo = new InventoryRepository(db);
-  return { itemRepo, inventoryRepo };
+  const charRepo = new CharacterRepository(db);
+  return { itemRepo, inventoryRepo, charRepo };
 }
 var InventoryTools = {
   CREATE_ITEM_TEMPLATE: {
@@ -62256,14 +62289,44 @@ async function handleRemoveItem(args, _ctx) {
   };
 }
 async function handleEquipItem(args, _ctx) {
-  const { inventoryRepo } = ensureDb2();
+  const { inventoryRepo, itemRepo, charRepo } = ensureDb2();
   const parsed = InventoryTools.EQUIP_ITEM.inputSchema.parse(args);
   const inventory = inventoryRepo.getInventory(parsed.characterId);
   const hasItem = inventory.items.some((i) => i.itemId === parsed.itemId && i.quantity > 0);
   if (!hasItem) {
     throw new Error(`Character does not own item ${parsed.itemId}`);
   }
+  const item = itemRepo.findById(parsed.itemId);
+  if (!item) {
+    throw new Error(`Item not found: ${parsed.itemId}`);
+  }
   inventoryRepo.equipItem(parsed.characterId, parsed.itemId, parsed.slot);
+  const character = charRepo.findById(parsed.characterId);
+  if (character && item.properties) {
+    const props = item.properties;
+    let newAc = character.ac;
+    let acMessage = "";
+    if (props.acBonus && typeof props.acBonus === "number") {
+      newAc = character.ac + props.acBonus;
+      acMessage = ` AC increased by ${props.acBonus} (now ${newAc})`;
+    }
+    if (props.baseAC && typeof props.baseAC === "number" && parsed.slot === "armor") {
+      const dexMod = Math.floor((character.stats.dex - 10) / 2);
+      const maxDexBonus = props.maxDexBonus !== void 0 ? Number(props.maxDexBonus) : 99;
+      const effectiveDexBonus = Math.min(dexMod, maxDexBonus);
+      newAc = props.baseAC + (maxDexBonus > 0 ? effectiveDexBonus : 0);
+      acMessage = ` AC set to ${newAc} (base ${props.baseAC}${maxDexBonus < 99 ? ` + DEX max ${maxDexBonus}` : " + DEX"})`;
+    }
+    if (newAc !== character.ac) {
+      charRepo.update(parsed.characterId, { ac: newAc });
+    }
+    return {
+      content: [{
+        type: "text",
+        text: `Equipped ${item.name} in slot ${parsed.slot}.${acMessage}`
+      }]
+    };
+  }
   return {
     content: [{
       type: "text",
@@ -62272,9 +62335,37 @@ async function handleEquipItem(args, _ctx) {
   };
 }
 async function handleUnequipItem(args, _ctx) {
-  const { inventoryRepo } = ensureDb2();
+  const { inventoryRepo, itemRepo, charRepo } = ensureDb2();
   const parsed = InventoryTools.UNEQUIP_ITEM.inputSchema.parse(args);
+  const item = itemRepo.findById(parsed.itemId);
+  const inventory = inventoryRepo.getInventory(parsed.characterId);
+  const equippedItem = inventory.items.find((i) => i.itemId === parsed.itemId && i.equipped);
+  const slot = equippedItem?.slot;
   inventoryRepo.unequipItem(parsed.characterId, parsed.itemId);
+  const character = charRepo.findById(parsed.characterId);
+  if (character && item?.properties) {
+    const props = item.properties;
+    let newAc = character.ac;
+    let acMessage = "";
+    if (props.acBonus && typeof props.acBonus === "number") {
+      newAc = Math.max(10, character.ac - props.acBonus);
+      acMessage = ` AC decreased by ${props.acBonus} (now ${newAc})`;
+    }
+    if (props.baseAC && typeof props.baseAC === "number" && slot === "armor") {
+      const dexMod = Math.floor((character.stats.dex - 10) / 2);
+      newAc = 10 + dexMod;
+      acMessage = ` AC reverted to unarmored (${newAc})`;
+    }
+    if (newAc !== character.ac) {
+      charRepo.update(parsed.characterId, { ac: newAc });
+    }
+    return {
+      content: [{
+        type: "text",
+        text: `Unequipped ${item.name}.${acMessage}`
+      }]
+    };
+  }
   return {
     content: [{
       type: "text",
@@ -66889,6 +66980,11 @@ function getHitDieSize(_characterId) {
 async function handleTakeLongRest(args, _ctx) {
   const { characterRepo } = ensureDb6();
   const parsed = RestTools.TAKE_LONG_REST.inputSchema.parse(args);
+  const combatManager = getCombatManager();
+  if (combatManager.isCharacterInCombat(parsed.characterId)) {
+    const encounters = combatManager.getEncountersForCharacter(parsed.characterId);
+    throw new Error(`Cannot take a long rest while in combat! Character is currently in encounter: ${encounters.join(", ")}`);
+  }
   const character = characterRepo.findById(parsed.characterId);
   if (!character) {
     throw new Error(`Character ${parsed.characterId} not found`);
@@ -66945,6 +67041,11 @@ async function handleTakeLongRest(args, _ctx) {
 async function handleTakeShortRest(args, _ctx) {
   const { characterRepo } = ensureDb6();
   const parsed = RestTools.TAKE_SHORT_REST.inputSchema.parse(args);
+  const combatManager = getCombatManager();
+  if (combatManager.isCharacterInCombat(parsed.characterId)) {
+    const encounters = combatManager.getEncountersForCharacter(parsed.characterId);
+    throw new Error(`Cannot take a short rest while in combat! Character is currently in encounter: ${encounters.join(", ")}`);
+  }
   const character = characterRepo.findById(parsed.characterId);
   if (!character) {
     throw new Error(`Character ${parsed.characterId} not found`);
@@ -69079,7 +69180,7 @@ function getEnvironmentModifier(atmospherics) {
   return modifier;
 }
 function isDeafened(character) {
-  return character.conditions?.includes("DEAFENED") || false;
+  return character.conditions?.some((c) => c.name === "DEAFENED") || false;
 }
 
 // dist/server/npc-memory-tools.js
@@ -73301,7 +73402,7 @@ async function handleLookAtSurroundings(args, _ctx) {
     };
   }
   const isInDarkness = currentRoom.atmospherics.includes("DARKNESS");
-  const hasLight = observer.conditions?.includes("HAS_LIGHT") || observer.conditions?.includes("DARKVISION");
+  const hasLight = observer.conditions?.some((c) => c.name === "HAS_LIGHT") || observer.conditions?.some((c) => c.name === "DARKVISION");
   if (isInDarkness && !hasLight) {
     return {
       content: [{
