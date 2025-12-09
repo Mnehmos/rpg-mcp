@@ -32,7 +32,9 @@ import { BatchTools, handleBatchCreateCharacters, handleBatchCreateNpcs, handleB
 import { WorkflowTools, handleExecuteWorkflow, handleListTemplates, handleGetTemplate } from './workflow-tools.js';
 import { EventInboxTools, handlePollEvents, handlePushEvent, handleGetEventHistory, handleGetPendingCount } from './event-inbox-tools.js';
 import { ContextTools, handleGetNarrativeContext } from './context-tools.js';
+import { ProgressionTools, handleAddXp, handleGetLevelProgression, handleLevelUp } from './progression-tools.js';
 import { SkillCheckTools, handleRollSkillCheck, handleRollAbilityCheck, handleRollSavingThrow } from './skill-check-tools.js';
+import { NarrativeTools, handleAddNarrativeNote, handleSearchNarrativeNotes, handleUpdateNarrativeNote, handleGetNarrativeNote, handleDeleteNarrativeNote, handleGetNarrativeContextNotes } from './narrative-tools.js';
 
 // Helper to create metadata
 // deferLoading defaults to true (most tools should be deferred)
@@ -309,6 +311,73 @@ export function buildToolRegistry(): ToolRegistry {
         ['Character deletion'], false, 'low'),
       schema: CRUDTools.DELETE_CHARACTER.inputSchema,
       handler: handleDeleteCharacter
+    },
+
+    // === PROGRESSION TOOLS ===
+    [ProgressionTools.ADD_XP.name]: {
+      metadata: meta(ProgressionTools.ADD_XP.name, ProgressionTools.ADD_XP.description, 'character',
+        ['xp', 'experience', 'level', 'progression', 'growth'],
+        ['XP tracking', 'Level up detection'], false, 'low'),
+      schema: ProgressionTools.ADD_XP.inputSchema,
+      handler: handleAddXp
+    },
+    [ProgressionTools.GET_LEVEL_PROGRESSION.name]: {
+      metadata: meta(ProgressionTools.GET_LEVEL_PROGRESSION.name, ProgressionTools.GET_LEVEL_PROGRESSION.description, 'character',
+        ['level', 'progression', 'xp', 'next', 'threshold'],
+        ['XP requirements lookup'], true, 'low'),
+      schema: ProgressionTools.GET_LEVEL_PROGRESSION.inputSchema,
+      handler: handleGetLevelProgression
+    },
+    [ProgressionTools.LEVEL_UP.name]: {
+      metadata: meta(ProgressionTools.LEVEL_UP.name, ProgressionTools.LEVEL_UP.description, 'character',
+        ['level', 'up', 'increase', 'stats', 'hp'],
+        ['Level increment', 'Stat updates'], false, 'medium'),
+      schema: ProgressionTools.LEVEL_UP.inputSchema,
+      handler: handleLevelUp
+    },
+
+    // === NARRATIVE MEMORY TOOLS ===
+    [NarrativeTools.ADD_NARRATIVE_NOTE.name]: {
+      metadata: meta(NarrativeTools.ADD_NARRATIVE_NOTE.name, NarrativeTools.ADD_NARRATIVE_NOTE.description, 'narrative',
+        ['narrative', 'note', 'plot', 'thread', 'story', 'memory', 'session', 'canonical'],
+        ['Plot tracking', 'Canonical moments', 'NPC voices', 'Foreshadowing'], false, 'low'),
+      schema: NarrativeTools.ADD_NARRATIVE_NOTE.inputSchema,
+      handler: handleAddNarrativeNote
+    },
+    [NarrativeTools.SEARCH_NARRATIVE_NOTES.name]: {
+      metadata: meta(NarrativeTools.SEARCH_NARRATIVE_NOTES.name, NarrativeTools.SEARCH_NARRATIVE_NOTES.description, 'narrative',
+        ['narrative', 'search', 'filter', 'notes', 'memory', 'query'],
+        ['Note retrieval', 'Filtering by type/tag'], true, 'medium'),
+      schema: NarrativeTools.SEARCH_NARRATIVE_NOTES.inputSchema,
+      handler: handleSearchNarrativeNotes
+    },
+    [NarrativeTools.UPDATE_NARRATIVE_NOTE.name]: {
+      metadata: meta(NarrativeTools.UPDATE_NARRATIVE_NOTE.name, NarrativeTools.UPDATE_NARRATIVE_NOTE.description, 'narrative',
+        ['narrative', 'update', 'resolve', 'status', 'edit'],
+        ['Note status updates', 'Plot resolution'], false, 'low'),
+      schema: NarrativeTools.UPDATE_NARRATIVE_NOTE.inputSchema,
+      handler: handleUpdateNarrativeNote
+    },
+    [NarrativeTools.GET_NARRATIVE_NOTE.name]: {
+      metadata: meta(NarrativeTools.GET_NARRATIVE_NOTE.name, NarrativeTools.GET_NARRATIVE_NOTE.description, 'narrative',
+        ['narrative', 'get', 'retrieve', 'note'],
+        ['Single note retrieval'], false, 'low'),
+      schema: NarrativeTools.GET_NARRATIVE_NOTE.inputSchema,
+      handler: handleGetNarrativeNote
+    },
+    [NarrativeTools.DELETE_NARRATIVE_NOTE.name]: {
+      metadata: meta(NarrativeTools.DELETE_NARRATIVE_NOTE.name, NarrativeTools.DELETE_NARRATIVE_NOTE.description, 'narrative',
+        ['narrative', 'delete', 'remove', 'note'],
+        ['Note deletion'], false, 'low'),
+      schema: NarrativeTools.DELETE_NARRATIVE_NOTE.inputSchema,
+      handler: handleDeleteNarrativeNote
+    },
+    [NarrativeTools.GET_NARRATIVE_CONTEXT.name]: {
+      metadata: meta(NarrativeTools.GET_NARRATIVE_CONTEXT.name, NarrativeTools.GET_NARRATIVE_CONTEXT.description, 'narrative',
+        ['narrative', 'context', 'llm', 'inject', 'prompt', 'memory', 'hot'],
+        ['Aggregated context', 'LLM prompt injection'], true, 'high'),
+      schema: NarrativeTools.GET_NARRATIVE_CONTEXT.inputSchema,
+      handler: handleGetNarrativeContextNotes
     },
 
     // === PARTY TOOLS ===

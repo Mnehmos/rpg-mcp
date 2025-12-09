@@ -80,7 +80,7 @@ function calculateRelevance(metadata: ToolMetadata, query: string): number {
 }
 
 export async function handleSearchTools(args: SearchToolsArgs): Promise<{
-  content: Array<{ type: 'tool_reference'; tool_name: string } | { type: 'text'; text: string }>;
+  content: Array<{ type: 'text'; text: string }>;
 }> {
   const allMetadata = getAllToolMetadata();
   let results = allMetadata;
@@ -131,14 +131,8 @@ export async function handleSearchTools(args: SearchToolsArgs): Promise<{
   // Get unique categories in results
   const categoriesInResults = [...new Set(truncated.map(t => t.category))];
   
-  // Build content array with tool_reference blocks for automatic expansion
-  // This allows Anthropic API to automatically load deferred tool definitions
-  const content: Array<{ type: 'tool_reference'; tool_name: string } | { type: 'text'; text: string }> = [];
-  
-  // Add tool_reference for each discovered tool (Anthropic will auto-expand)
-  for (const tool of truncated) {
-    content.push({ type: 'tool_reference', tool_name: tool.name });
-  }
+  // Build content array - standard text only to pass validation
+  const content: Array<{ type: 'text'; text: string }> = [];
   
   // Add summary text for human readability
   const summary = {

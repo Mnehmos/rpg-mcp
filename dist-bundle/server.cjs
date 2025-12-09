@@ -12158,6 +12158,7 @@ var init_character = __esm({
       maxHp: external_exports.number().int().min(0),
       ac: external_exports.number().int().min(0),
       level: external_exports.number().int().min(1),
+      xp: external_exports.number().int().min(0).default(0).describe("Current experience points"),
       characterType: CharacterTypeSchema.optional().default("pc"),
       // PHASE-2: Social Hearing Mechanics - skill bonuses for opposed rolls
       perceptionBonus: external_exports.number().int().optional().default(0).describe("Proficiency bonus for Perception checks (WIS-based)"),
@@ -53121,6 +53122,23 @@ function runMigrations(db) {
   const hasNetworkId = roomColumns.some((col) => col.name === "network_id");
   const hasLocalX = roomColumns.some((col) => col.name === "local_x");
   const hasLocalY = roomColumns.some((col) => col.name === "local_y");
+  if (!hasNetworkId) {
+    console.error("[Migration] Adding network_id column to room_nodes table");
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN network_id TEXT;`);
+  }
+  if (!hasLocalX) {
+    console.error("[Migration] Adding local_x column to room_nodes table");
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN local_x INTEGER DEFAULT 0;`);
+  }
+  if (!hasLocalY) {
+    console.error("[Migration] Adding local_y column to room_nodes table");
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN local_y INTEGER DEFAULT 0;`);
+  }
+  const hasXp = charColumns.some((col) => col.name === "xp");
+  if (!hasXp) {
+    console.error("[Migration] Adding xp column to characters table");
+    db.exec(`ALTER TABLE characters ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;`);
+  }
   const hasWorldX = roomColumns.some((col) => col.name === "world_x");
   const hasWorldY = roomColumns.some((col) => col.name === "world_y");
   if (hasWorldX && !hasLocalX) {
@@ -74635,6 +74653,158 @@ ${s.content}`).join("\n\n");
   };
 }
 
+// dist/server/progression-tools.js
+init_zod();
+init_character_repo();
+var XP_TABLE = {
+  1: 0,
+  2: 300,
+  3: 900,
+  4: 2700,
+  5: 6500,
+  6: 14e3,
+  7: 23e3,
+  8: 34e3,
+  9: 48e3,
+  10: 64e3,
+  11: 85e3,
+  12: 1e5,
+  13: 12e4,
+  14: 14e4,
+  15: 165e3,
+  16: 195e3,
+  17: 225e3,
+  18: 265e3,
+  19: 305e3,
+  20: 355e3
+};
+var ProgressionTools = {
+  ADD_XP: {
+    name: "add_xp",
+    description: "Add experience points to a character. Checks for level-up thresholds.",
+    inputSchema: external_exports.object({
+      characterId: external_exports.string().describe("ID of the character"),
+      amount: external_exports.number().int().min(1).describe("Amount of XP to add")
+    })
+  },
+  GET_LEVEL_PROGRESSION: {
+    name: "get_level_progression",
+    description: "Get level progression details including XP needed for next level.",
+    inputSchema: external_exports.object({
+      level: external_exports.number().int().min(1).max(20).describe("Current level to check progression for")
+    })
+  },
+  LEVEL_UP: {
+    name: "level_up",
+    description: "Increment character level and optionally update stats like HP.",
+    inputSchema: external_exports.object({
+      characterId: external_exports.string().describe("ID of the character"),
+      hpIncrease: external_exports.number().int().min(0).optional().describe("Amount to increase Max HP by (if any)"),
+      targetLevel: external_exports.number().int().min(2).max(20).optional().describe("Explicit target level (default: current + 1)")
+    })
+  }
+};
+async function handleAddXp(args, _ctx) {
+  const parsed = ProgressionTools.ADD_XP.inputSchema.parse(args);
+  const db = getDb();
+  const repo = new CharacterRepository(db);
+  const char = repo.findById(parsed.characterId);
+  if (!char) {
+    throw new Error(`Character ${parsed.characterId} not found`);
+  }
+  const currentXp = char.xp || 0;
+  const newXp = currentXp + parsed.amount;
+  const currentLevel = char.level;
+  const nextLevelXp = XP_TABLE[currentLevel + 1];
+  let message = `Added ${parsed.amount} XP. Total: ${newXp}.`;
+  let canLevelUp = false;
+  if (nextLevelXp && newXp >= nextLevelXp) {
+    canLevelUp = true;
+    message += ` \u{1F31F} LEVEL UP AVAILABLE! Reached threshold for Level ${currentLevel + 1}.`;
+  }
+  repo.update(char.id, { xp: newXp });
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          characterId: char.id,
+          name: char.name,
+          oldXp: currentXp,
+          newXp,
+          level: currentLevel,
+          canLevelUp,
+          nextLevelXp,
+          message
+        }, null, 2)
+      }
+    ]
+  };
+}
+async function handleGetLevelProgression(args, _ctx) {
+  const parsed = ProgressionTools.GET_LEVEL_PROGRESSION.inputSchema.parse(args);
+  const level = parsed.level;
+  if (level >= 20) {
+    return {
+      content: [{ type: "text", text: JSON.stringify({ level: 20, maxLevel: true, xpForCurrent: XP_TABLE[20] }) }]
+    };
+  }
+  const currentXpBase = XP_TABLE[level];
+  const nextLevelXp = XP_TABLE[level + 1];
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          level,
+          xpRequiredForLevel: currentXpBase,
+          xpForNextLevel: nextLevelXp,
+          xpToNext: nextLevelXp - currentXpBase
+        }, null, 2)
+      }
+    ]
+  };
+}
+async function handleLevelUp(args, _ctx) {
+  const parsed = ProgressionTools.LEVEL_UP.inputSchema.parse(args);
+  const db = getDb();
+  const repo = new CharacterRepository(db);
+  const char = repo.findById(parsed.characterId);
+  if (!char) {
+    throw new Error(`Character ${parsed.characterId} not found`);
+  }
+  const currentLevel = char.level;
+  const targetLevel = parsed.targetLevel || currentLevel + 1;
+  if (targetLevel <= currentLevel) {
+    throw new Error(`Target level ${targetLevel} must be greater than current level ${currentLevel}`);
+  }
+  const updates = {
+    level: targetLevel
+  };
+  if (parsed.hpIncrease) {
+    updates.maxHp = (char.maxHp || 0) + parsed.hpIncrease;
+    updates.hp = (char.hp || 0) + parsed.hpIncrease;
+    updates.hp = (char.hp || 0) + parsed.hpIncrease;
+  }
+  repo.update(char.id, updates);
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          characterId: char.id,
+          name: char.name,
+          oldLevel: currentLevel,
+          newLevel: targetLevel,
+          hpIncrease: parsed.hpIncrease || 0,
+          newMaxHp: updates.maxHp || char.maxHp,
+          message: `Leveled up to ${targetLevel}!`
+        }, null, 2)
+      }
+    ]
+  };
+}
+
 // dist/server/skill-check-tools.js
 init_zod();
 init_character_repo();
@@ -74683,7 +74853,24 @@ function ensureDb12() {
   const dbPath = process.env.NODE_ENV === "test" ? ":memory:" : process.env.RPG_DATA_DIR ? `${process.env.RPG_DATA_DIR}/rpg.db` : "rpg.db";
   const db = getDb(dbPath);
   const charRepo = new CharacterRepository(db);
-  return { charRepo };
+  const invRepo = new InventoryRepository(db);
+  return { charRepo, invRepo };
+}
+function hasArmorStealthDisadvantage(invRepo, characterId) {
+  try {
+    const inventory = invRepo.getInventoryWithDetails(characterId);
+    for (const entry of inventory.items) {
+      if (entry.equipped && entry.item.type === "armor") {
+        const props = entry.item.properties;
+        if (props && props.stealthDisadvantage === true) {
+          return { hasDisadvantage: true, armorName: entry.item.name };
+        }
+      }
+    }
+    return { hasDisadvantage: false };
+  } catch {
+    return { hasDisadvantage: false };
+  }
 }
 function getProficiencyBonus(level) {
   return Math.floor((level - 1) / 4) + 2;
@@ -74731,7 +74918,7 @@ Example: roll_skill_check with characterId and skill="perception" for active cha
   }
 };
 async function handleRollSkillCheck(args, _ctx) {
-  const { charRepo } = ensureDb12();
+  const { charRepo, invRepo } = ensureDb12();
   const parsed = SkillCheckTools.ROLL_SKILL_CHECK.inputSchema.parse(args);
   const character = charRepo.findById(parsed.characterId);
   if (!character) {
@@ -74751,14 +74938,24 @@ async function handleRollSkillCheck(args, _ctx) {
   } else if (isProficient) {
     totalMod += profBonus;
   }
+  let armorDisadvantage = { hasDisadvantage: false };
+  if (parsed.skill === "stealth") {
+    armorDisadvantage = hasArmorStealthDisadvantage(invRepo, parsed.characterId);
+  }
+  let hasAdvantage = parsed.advantage === true;
+  let hasDisadvantage = parsed.disadvantage === true || armorDisadvantage.hasDisadvantage;
+  if (hasAdvantage && hasDisadvantage) {
+    hasAdvantage = false;
+    hasDisadvantage = false;
+  }
   const dice = new DiceEngine();
   const diceExpr = {
     count: 1,
     sides: 20,
     modifier: totalMod,
     explode: false,
-    advantage: parsed.advantage && !parsed.disadvantage,
-    disadvantage: parsed.disadvantage && !parsed.advantage
+    advantage: hasAdvantage,
+    disadvantage: hasDisadvantage
   };
   const result = dice.roll(diceExpr);
   const skillName = parsed.skill.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -74779,9 +74976,13 @@ async function handleRollSkillCheck(args, _ctx) {
     },
     proficient: isProficient,
     expertise: hasExpertise,
-    advantage: parsed.advantage,
-    disadvantage: parsed.disadvantage
+    advantage: hasAdvantage,
+    disadvantage: hasDisadvantage
   };
+  if (armorDisadvantage.hasDisadvantage) {
+    response.armorDisadvantage = true;
+    response.armorName = armorDisadvantage.armorName;
+  }
   if (parsed.dc !== void 0) {
     response.dc = parsed.dc;
     response.success = rollTotal >= parsed.dc;
@@ -75088,6 +75289,22 @@ function buildToolRegistry() {
       metadata: meta(CRUDTools.DELETE_CHARACTER.name, CRUDTools.DELETE_CHARACTER.description, "character", ["character", "delete", "remove"], ["Character deletion"], false, "low"),
       schema: CRUDTools.DELETE_CHARACTER.inputSchema,
       handler: handleDeleteCharacter
+    },
+    // === PROGRESSION TOOLS ===
+    [ProgressionTools.ADD_XP.name]: {
+      metadata: meta(ProgressionTools.ADD_XP.name, ProgressionTools.ADD_XP.description, "character", ["xp", "experience", "level", "progression", "growth"], ["XP tracking", "Level up detection"], false, "low"),
+      schema: ProgressionTools.ADD_XP.inputSchema,
+      handler: handleAddXp
+    },
+    [ProgressionTools.GET_LEVEL_PROGRESSION.name]: {
+      metadata: meta(ProgressionTools.GET_LEVEL_PROGRESSION.name, ProgressionTools.GET_LEVEL_PROGRESSION.description, "character", ["level", "progression", "xp", "next", "threshold"], ["XP requirements lookup"], true, "low"),
+      schema: ProgressionTools.GET_LEVEL_PROGRESSION.inputSchema,
+      handler: handleGetLevelProgression
+    },
+    [ProgressionTools.LEVEL_UP.name]: {
+      metadata: meta(ProgressionTools.LEVEL_UP.name, ProgressionTools.LEVEL_UP.description, "character", ["level", "up", "increase", "stats", "hp"], ["Level increment", "Stat updates"], false, "medium"),
+      schema: ProgressionTools.LEVEL_UP.inputSchema,
+      handler: handleLevelUp
     },
     // === PARTY TOOLS ===
     [PartyTools.CREATE_PARTY.name]: {
@@ -75932,9 +76149,6 @@ async function handleSearchTools(args) {
   }
   const categoriesInResults = [...new Set(truncated.map((t) => t.category))];
   const content = [];
-  for (const tool of truncated) {
-    content.push({ type: "tool_reference", tool_name: tool.name });
-  }
   const summary = {
     total_found: filtered.length,
     returned: truncated.length,

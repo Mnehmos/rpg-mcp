@@ -24,6 +24,7 @@ export const CharacterSchema = z.object({
     maxHp: z.number().int().min(0),
     ac: z.number().int().min(0),
     level: z.number().int().min(1),
+    xp: z.number().int().min(0).default(0).describe('Current experience points'),
     characterType: CharacterTypeSchema.optional().default('pc'),
 
     // PHASE-2: Social Hearing Mechanics - skill bonuses for opposed rolls

@@ -799,6 +799,13 @@ function runMigrations(db: Database.Database) {
   const hasLocalX = roomColumns.some(col => col.name === 'local_x');
   const hasLocalY = roomColumns.some(col => col.name === 'local_y');
 
+  // XP System: Add xp column to characters table
+  const hasXp = charColumns.some(col => col.name === 'xp');
+  if (!hasXp) {
+    console.error('[Migration] Adding xp column to characters table');
+    db.exec(`ALTER TABLE characters ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;`);
+  }
+
   // Migration: Rename world_x/world_y to local_x/local_y if needed
   const hasWorldX = roomColumns.some(col => col.name === 'world_x');
   const hasWorldY = roomColumns.some(col => col.name === 'world_y');
@@ -808,7 +815,7 @@ function runMigrations(db: Database.Database) {
     db.exec(`ALTER TABLE room_nodes RENAME COLUMN world_x TO local_x;`);
   } else if (!hasLocalX && !hasWorldX) {
     console.error('[Migration] Adding local_x column to room_nodes table');
-    db.exec(`ALTER TABLE room_nodes ADD COLUMN local_x INTEGER;`);
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN local_x INTEGER DEFAULT 0;`);
   }
 
   if (hasWorldY && !hasLocalY) {
@@ -816,7 +823,7 @@ function runMigrations(db: Database.Database) {
     db.exec(`ALTER TABLE room_nodes RENAME COLUMN world_y TO local_y;`);
   } else if (!hasLocalY && !hasWorldY) {
     console.error('[Migration] Adding local_y column to room_nodes table');
-    db.exec(`ALTER TABLE room_nodes ADD COLUMN local_y INTEGER;`);
+    db.exec(`ALTER TABLE room_nodes ADD COLUMN local_y INTEGER DEFAULT 0;`);
   }
 
   if (!hasNetworkId) {
@@ -842,6 +849,29 @@ function runMigrations(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_node_networks_world ON node_networks(world_id);
     CREATE INDEX IF NOT EXISTS idx_room_nodes_local_coords ON room_nodes(local_x, local_y);
     CREATE INDEX IF NOT EXISTS idx_room_nodes_network ON room_nodes(network_id);
+
+    -- NARRATIVE MEMORY LAYER: Typed notes for plot threads, canonical moments, NPC voices
+    CREATE TABLE IF NOT EXISTS narrative_notes(
+      id TEXT PRIMARY KEY,
+      world_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('plot_thread', 'canonical_moment', 'npc_voice', 'foreshadowing', 'session_log')),
+      content TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}', -- JSON: type-specific structured data
+      visibility TEXT NOT NULL DEFAULT 'dm_only' CHECK(visibility IN ('dm_only', 'player_visible')),
+      tags TEXT NOT NULL DEFAULT '[]', -- JSON array of tag strings
+      entity_id TEXT, -- Optional: Link to character/NPC/location
+      entity_type TEXT, -- Optional: 'character', 'npc', 'location', 'item'
+      status TEXT DEFAULT 'active' CHECK(status IN ('active', 'resolved', 'dormant', 'archived')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_narrative_notes_world ON narrative_notes(world_id);
+    CREATE INDEX IF NOT EXISTS idx_narrative_notes_type ON narrative_notes(type);
+    CREATE INDEX IF NOT EXISTS idx_narrative_notes_status ON narrative_notes(status);
+    CREATE INDEX IF NOT EXISTS idx_narrative_notes_created ON narrative_notes(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_narrative_notes_entity ON narrative_notes(entity_id, entity_type);
   `);
 }
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getDb } from '../storage/index.js';
 import { CharacterRepository } from '../storage/repos/character.repo.js';
+import { InventoryRepository } from '../storage/repos/inventory.repo.js';
 import { DiceEngine } from '../math/dice.js';
 import { SessionContext } from './types.js';
 
@@ -49,7 +50,31 @@ function ensureDb() {
             : 'rpg.db';
     const db = getDb(dbPath);
     const charRepo = new CharacterRepository(db);
-    return { charRepo };
+    const invRepo = new InventoryRepository(db);
+    return { charRepo, invRepo };
+}
+
+/**
+ * Check if character has equipped armor that imposes stealth disadvantage
+ */
+function hasArmorStealthDisadvantage(invRepo: InventoryRepository, characterId: string): { hasDisadvantage: boolean; armorName?: string } {
+    try {
+        const inventory = invRepo.getInventoryWithDetails(characterId);
+        
+        // Find equipped armor with stealth disadvantage
+        for (const entry of inventory.items) {
+            if (entry.equipped && entry.item.type === 'armor') {
+                const props = entry.item.properties;
+                if (props && props.stealthDisadvantage === true) {
+                    return { hasDisadvantage: true, armorName: entry.item.name };
+                }
+            }
+        }
+        return { hasDisadvantage: false };
+    } catch {
+        // If inventory check fails, don't block the roll
+        return { hasDisadvantage: false };
+    }
 }
 
 /**
@@ -109,7 +134,7 @@ Example: roll_skill_check with characterId and skill="perception" for active cha
 } as const;
 
 export async function handleRollSkillCheck(args: unknown, _ctx: SessionContext) {
-    const { charRepo } = ensureDb();
+    const { charRepo, invRepo } = ensureDb();
     const parsed = SkillCheckTools.ROLL_SKILL_CHECK.inputSchema.parse(args);
 
     const character = charRepo.findById(parsed.characterId);
@@ -137,6 +162,23 @@ export async function handleRollSkillCheck(args: unknown, _ctx: SessionContext) 
         totalMod += profBonus;
     }
 
+    // Check for armor stealth disadvantage (D&D 5e rule)
+    let armorDisadvantage: { hasDisadvantage: boolean; armorName?: string } = { hasDisadvantage: false };
+    if (parsed.skill === 'stealth') {
+        armorDisadvantage = hasArmorStealthDisadvantage(invRepo, parsed.characterId);
+    }
+
+    // Determine final advantage/disadvantage state
+    // D&D 5e: advantage and disadvantage cancel out
+    let hasAdvantage = parsed.advantage === true;
+    let hasDisadvantage = parsed.disadvantage === true || armorDisadvantage.hasDisadvantage;
+    
+    // If both advantage and disadvantage, they cancel
+    if (hasAdvantage && hasDisadvantage) {
+        hasAdvantage = false;
+        hasDisadvantage = false;
+    }
+
     // Roll with advantage/disadvantage
     const dice = new DiceEngine();
     const diceExpr = {
@@ -144,8 +186,8 @@ export async function handleRollSkillCheck(args: unknown, _ctx: SessionContext) 
         sides: 20,
         modifier: totalMod,
         explode: false,
-        advantage: parsed.advantage && !parsed.disadvantage,
-        disadvantage: parsed.disadvantage && !parsed.advantage
+        advantage: hasAdvantage,
+        disadvantage: hasDisadvantage
     };
 
     const result = dice.roll(diceExpr);
@@ -157,7 +199,7 @@ export async function handleRollSkillCheck(args: unknown, _ctx: SessionContext) 
     const rollTotal = typeof result.result === 'number' ? result.result : parseInt(String(result.result), 10);
     const rolls = (result.metadata as any)?.rolls as number[] | undefined;
 
-    // Build response
+    // Build response with armor disadvantage info for transparency
     const response: Record<string, unknown> = {
         character: character.name,
         skill: skillName,
@@ -172,9 +214,15 @@ export async function handleRollSkillCheck(args: unknown, _ctx: SessionContext) 
         },
         proficient: isProficient,
         expertise: hasExpertise,
-        advantage: parsed.advantage,
-        disadvantage: parsed.disadvantage
+        advantage: hasAdvantage,
+        disadvantage: hasDisadvantage
     };
+
+    // Add armor disadvantage info if applicable
+    if (armorDisadvantage.hasDisadvantage) {
+        response.armorDisadvantage = true;
+        response.armorName = armorDisadvantage.armorName;
+    }
 
     if (parsed.dc !== undefined) {
         response.dc = parsed.dc;
