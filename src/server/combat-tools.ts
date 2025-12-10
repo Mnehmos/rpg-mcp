@@ -706,33 +706,66 @@ Example - Lightning Bolt (100ft line):
     },
     UPDATE_TERRAIN: {
         name: 'update_terrain',
-        description: `Add, remove, or modify terrain in an active encounter. Use this to dynamically change the battlefield.
+        description: `Add, remove, or modify terrain in an active encounter. ALWAYS prefer ranges over tiles arrays for efficiency.
 
-Supports:
+TERRAIN TYPES:
 - obstacles: Blocking terrain (walls, rocks, fallen trees)
 - difficultTerrain: Half-speed terrain (mud, rubble, underbrush)
 - water: Watery terrain (streams, rivers, pools)
 
-Example - Add a river:
-{
-  "encounterId": "encounter-1",
-  "operation": "add",
-  "terrainType": "water",
-  "tiles": ["40,0", "40,1", "40,2", "40,3", "40,4"]
-}
+INPUT OPTIONS (use ranges for efficiency):
+1. ranges: Array of range shortcuts (PREFERRED - saves tokens)
+2. tiles: Array of "x,y" strings (only for specific scattered tiles)
 
-Example - Remove obstacles:
-{
-  "encounterId": "encounter-1",
-  "operation": "remove",
-  "terrainType": "obstacles",
-  "tiles": ["5,5", "5,6"]
-}`,
+RANGE SHORTCUTS (use these!):
+
+LINES:
+- "x=N" - vertical line at x=N (full height)
+- "x=N:y1:y2" - vertical line segment
+- "y=N" - horizontal line at y=N (full width)
+- "y=N:x1:x2" - horizontal line segment
+- "line:x1,y1,x2,y2" - diagonal/any line from point to point (Bresenham)
+- "hline:y:x1:x2" - horizontal line
+- "vline:x:y1:y2" - vertical line
+- "row:N" / "col:N" - aliases for y=N / x=N
+
+SHAPES:
+- "rect:x,y,w,h" - filled rectangle
+- "box:x,y,w,h" - hollow rectangle (border only)
+- "border:margin" - outer border of grid (margin=0 for edge)
+- "fill:x1,y1,x2,y2" - fill between two corners
+- "circle:cx,cy,r" - filled circle
+- "ring:cx,cy,r" - hollow circle
+
+ALGEBRA (for curves, diagonals):
+- "y=x:0:99" - diagonal line (y equals x)
+- "y=2*x+5:0:50" - any linear equation
+- "y=x/2:0:99" - half-speed diagonal
+- "expr:EQUATION:xMin:xMax" - explicit expression format
+
+EXAMPLES:
+
+Maze outer walls (1 call vs 4):
+{ "ranges": ["border:0"], "gridWidth": 100, "gridHeight": 100 }
+
+Complex maze section:
+{ "ranges": ["y=10:0:50", "x=25:10:40", "line:50,50,75,25", "box:60,60,15,15"] }
+
+Diagonal river:
+{ "terrainType": "water", "ranges": ["y=x:0:99"] }
+
+Circular arena:
+{ "ranges": ["ring:50,50,40", "border:0"] }`,
         inputSchema: z.object({
             encounterId: z.string().describe('The ID of the encounter'),
             operation: z.enum(['add', 'remove']).describe('Add or remove terrain'),
             terrainType: z.enum(['obstacles', 'difficultTerrain', 'water']).describe('Type of terrain to modify'),
-            tiles: z.array(z.string()).min(1).describe('Array of "x,y" coordinate strings')
+            tiles: z.array(z.string()).optional().describe('Array of "x,y" coordinate strings (use this OR ranges)'),
+            ranges: z.array(z.string()).optional().describe('Array of range shortcuts like "row:5", "col:10", "rect:0,0,10,10", "border:0"'),
+            gridWidth: z.number().int().min(1).max(500).default(100).describe('Grid width for range calculations'),
+            gridHeight: z.number().int().min(1).max(500).default(100).describe('Grid height for range calculations')
+        }).refine(data => data.tiles || data.ranges, {
+            message: 'Either tiles or ranges must be provided'
         })
     },
     PLACE_PROP: {
@@ -888,34 +921,46 @@ Example - Dungeon room:
      */
     GENERATE_TERRAIN_PATTERN: {
         name: 'generate_terrain_pattern',
-        description: `Generate terrain using a geometric pattern template for consistent layouts.
+        description: `Generate terrain using a pattern template. ONE CALL generates entire layout.
 
 PATTERNS:
-- river_valley: Parallel cliff walls on east/west edges, 3-wide river in center
-- canyon: Two parallel walls running east-west with open pass between
-- arena: Circular wall perimeter enclosing fighting area
-- mountain_pass: Narrowing corridor toward center, wider at edges
+- maze: Full procedural maze (corridors & walls) - USE THIS FOR MAZES
+- maze_rooms: Maze with open chambers/rooms connected by corridors
+- river_valley: Cliff walls on east/west with river in center
+- canyon: Parallel walls east-west with pass between
+- arena: Circular wall enclosing fighting area
+- mountain_pass: Narrowing corridor toward center
 
-This tool generates consistent terrain layouts every time, unlike biome-based generation.
-
-Example:
+MAZE EXAMPLE (100x100 in ONE call):
 {
   "encounterId": "enc-1",
-  "pattern": "river_valley",
+  "pattern": "maze",
   "origin": { "x": 0, "y": 0 },
-  "width": 25,
-  "height": 40
+  "width": 100,
+  "height": 100,
+  "seed": "maze-runner-001"
+}
+
+MAZE WITH ROOMS:
+{
+  "pattern": "maze_rooms",
+  "width": 100,
+  "height": 100,
+  "roomCount": 8
 }`,
         inputSchema: z.object({
             encounterId: z.string().describe('The ID of the encounter'),
-            pattern: z.enum(['river_valley', 'canyon', 'arena', 'mountain_pass'])
+            pattern: z.enum(['river_valley', 'canyon', 'arena', 'mountain_pass', 'maze', 'maze_rooms'])
                 .describe('Terrain pattern to generate'),
             origin: z.object({
                 x: z.number().int(),
                 y: z.number().int()
-            }).describe('Top-left corner of the pattern'),
-            width: z.number().int().min(10).max(100).describe('Width of the pattern area'),
-            height: z.number().int().min(10).max(100).describe('Height of the pattern area')
+            }).default({ x: 0, y: 0 }).describe('Top-left corner of the pattern'),
+            width: z.number().int().min(10).max(500).default(100).describe('Width of the pattern area'),
+            height: z.number().int().min(10).max(500).default(100).describe('Height of the pattern area'),
+            seed: z.string().optional().describe('Seed for reproducible generation'),
+            corridorWidth: z.number().int().min(1).max(5).default(1).describe('Width of corridors (maze patterns only)'),
+            roomCount: z.number().int().min(0).max(20).default(5).describe('Number of rooms (maze_rooms pattern only)')
         })
     }
 } as const;
@@ -1928,6 +1973,298 @@ export async function handleCalculateAoe(args: unknown, ctx: SessionContext) {
 }
 
 /**
+ * Bresenham's line algorithm - draws a line from (x1,y1) to (x2,y2)
+ */
+function bresenhamLine(x1: number, y1: number, x2: number, y2: number): string[] {
+    const tiles: string[] = [];
+    const dx = Math.abs(x2 - x1);
+    const dy = Math.abs(y2 - y1);
+    const sx = x1 < x2 ? 1 : -1;
+    const sy = y1 < y2 ? 1 : -1;
+    let err = dx - dy;
+
+    let x = x1;
+    let y = y1;
+
+    while (true) {
+        tiles.push(`${x},${y}`);
+        if (x === x2 && y === y2) break;
+        const e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y += sy;
+        }
+    }
+    return tiles;
+}
+
+/**
+ * Evaluate a simple algebraic expression for y given x
+ * Supports: constants, x, +, -, *, /, parentheses
+ * Examples: "2*x+3", "x/2", "10", "x", "(x+5)/2"
+ */
+function evaluateExpression(expr: string, x: number): number {
+    // Replace 'x' with the actual value
+    const substituted = expr.replace(/x/gi, `(${x})`);
+    // Safely evaluate basic math (no eval for security)
+    // Parse simple expressions: numbers, +, -, *, /, parentheses
+    try {
+        // Use Function constructor for safe math evaluation (no access to scope)
+        const result = new Function(`return ${substituted}`)();
+        return Math.round(result);
+    } catch {
+        throw new Error(`Invalid expression: ${expr}`);
+    }
+}
+
+/**
+ * Parse range shortcut into array of "x,y" coordinate strings
+ *
+ * FORMATS:
+ * - row:N or row:N:x1:x2 - horizontal line at y=N
+ * - col:N or col:N:y1:y2 - vertical line at x=N
+ * - hline:y:x1:x2 - horizontal line
+ * - vline:x:y1:y2 - vertical line
+ * - line:x1,y1,x2,y2 - point-to-point line (Bresenham)
+ * - rect:x,y,w,h - filled rectangle
+ * - border:margin - outer border
+ * - fill:x1,y1,x2,y2 - fill rectangle by corners
+ * - expr:EQUATION:xMin:xMax - algebraic expression (e.g., "expr:2*x+5:0:50")
+ * - x=N or x=N:y1:y2 - vertical line shorthand
+ * - y=N or y=N:x1:x2 - horizontal line shorthand
+ * - y=EXPR:xMin:xMax - algebraic y as function of x (e.g., "y=2*x+3:0:20")
+ */
+function parseRangeShortcut(range: string, gridWidth: number, gridHeight: number): string[] {
+    const tiles: string[] = [];
+
+    // Check for algebraic shorthand first: x=N, y=N, y=expr
+    if (range.startsWith('x=')) {
+        // x=N or x=N:y1:y2 - vertical line
+        const afterEquals = range.substring(2);
+        const colonParts = afterEquals.split(':');
+        const x = parseInt(colonParts[0], 10);
+        const y1 = colonParts[1] ? parseInt(colonParts[1], 10) : 0;
+        const y2 = colonParts[2] ? parseInt(colonParts[2], 10) : gridHeight - 1;
+        for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) {
+            tiles.push(`${x},${y}`);
+        }
+        return tiles;
+    }
+
+    if (range.startsWith('y=')) {
+        // y=N or y=N:x1:x2 - horizontal line OR y=expr:x1:x2 - algebraic
+        const afterEquals = range.substring(2);
+        const colonParts = afterEquals.split(':');
+        const firstPart = colonParts[0];
+
+        // Check if it's a simple number or an expression
+        const isSimpleNumber = /^-?\d+$/.test(firstPart);
+
+        if (isSimpleNumber) {
+            // y=N:x1:x2 - simple horizontal line
+            const y = parseInt(firstPart, 10);
+            const x1 = colonParts[1] ? parseInt(colonParts[1], 10) : 0;
+            const x2 = colonParts[2] ? parseInt(colonParts[2], 10) : gridWidth - 1;
+            for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+                tiles.push(`${x},${y}`);
+            }
+        } else {
+            // y=expr:x1:x2 - algebraic expression
+            const expr = firstPart;
+            const xMin = colonParts[1] ? parseInt(colonParts[1], 10) : 0;
+            const xMax = colonParts[2] ? parseInt(colonParts[2], 10) : gridWidth - 1;
+            for (let x = xMin; x <= xMax; x++) {
+                const y = evaluateExpression(expr, x);
+                if (y >= 0 && y < gridHeight) {
+                    tiles.push(`${x},${y}`);
+                }
+            }
+        }
+        return tiles;
+    }
+
+    const parts = range.split(':');
+    const command = parts[0].toLowerCase();
+
+    switch (command) {
+        case 'row': {
+            // row:N or row:N:x1:x2
+            const y = parseInt(parts[1], 10);
+            const x1 = parts[2] ? parseInt(parts[2], 10) : 0;
+            const x2 = parts[3] ? parseInt(parts[3], 10) : gridWidth - 1;
+            for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+                tiles.push(`${x},${y}`);
+            }
+            break;
+        }
+        case 'col': {
+            // col:N or col:N:y1:y2
+            const x = parseInt(parts[1], 10);
+            const y1 = parts[2] ? parseInt(parts[2], 10) : 0;
+            const y2 = parts[3] ? parseInt(parts[3], 10) : gridHeight - 1;
+            for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) {
+                tiles.push(`${x},${y}`);
+            }
+            break;
+        }
+        case 'hline': {
+            // hline:y:x1:x2 - horizontal line
+            const y = parseInt(parts[1], 10);
+            const x1 = parseInt(parts[2], 10);
+            const x2 = parseInt(parts[3], 10);
+            for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+                tiles.push(`${x},${y}`);
+            }
+            break;
+        }
+        case 'vline': {
+            // vline:x:y1:y2 - vertical line
+            const x = parseInt(parts[1], 10);
+            const y1 = parseInt(parts[2], 10);
+            const y2 = parseInt(parts[3], 10);
+            for (let y = Math.min(y1, y2); y <= Math.max(y1, y2); y++) {
+                tiles.push(`${x},${y}`);
+            }
+            break;
+        }
+        case 'line': {
+            // line:x1,y1,x2,y2 - point-to-point line using Bresenham
+            const lineParts = parts[1].split(',');
+            const x1 = parseInt(lineParts[0], 10);
+            const y1 = parseInt(lineParts[1], 10);
+            const x2 = parseInt(lineParts[2], 10);
+            const y2 = parseInt(lineParts[3], 10);
+            tiles.push(...bresenhamLine(x1, y1, x2, y2));
+            break;
+        }
+        case 'rect': {
+            // rect:x,y,w,h - filled rectangle
+            const rectParts = parts[1].split(',');
+            const rx = parseInt(rectParts[0], 10);
+            const ry = parseInt(rectParts[1], 10);
+            const rw = parseInt(rectParts[2], 10);
+            const rh = parseInt(rectParts[3], 10);
+            for (let y = ry; y < ry + rh; y++) {
+                for (let x = rx; x < rx + rw; x++) {
+                    tiles.push(`${x},${y}`);
+                }
+            }
+            break;
+        }
+        case 'box': {
+            // box:x,y,w,h - hollow rectangle (just the border)
+            const boxParts = parts[1].split(',');
+            const bx = parseInt(boxParts[0], 10);
+            const by = parseInt(boxParts[1], 10);
+            const bw = parseInt(boxParts[2], 10);
+            const bh = parseInt(boxParts[3], 10);
+            // Top and bottom edges
+            for (let x = bx; x < bx + bw; x++) {
+                tiles.push(`${x},${by}`);
+                tiles.push(`${x},${by + bh - 1}`);
+            }
+            // Left and right edges (excluding corners)
+            for (let y = by + 1; y < by + bh - 1; y++) {
+                tiles.push(`${bx},${y}`);
+                tiles.push(`${bx + bw - 1},${y}`);
+            }
+            break;
+        }
+        case 'border': {
+            // border:margin - outer border with margin inward
+            const margin = parseInt(parts[1], 10);
+            // Top edge
+            for (let x = margin; x < gridWidth - margin; x++) {
+                tiles.push(`${x},${margin}`);
+            }
+            // Bottom edge
+            for (let x = margin; x < gridWidth - margin; x++) {
+                tiles.push(`${x},${gridHeight - 1 - margin}`);
+            }
+            // Left edge (excluding corners already added)
+            for (let y = margin + 1; y < gridHeight - margin - 1; y++) {
+                tiles.push(`${margin},${y}`);
+            }
+            // Right edge (excluding corners already added)
+            for (let y = margin + 1; y < gridHeight - margin - 1; y++) {
+                tiles.push(`${gridWidth - 1 - margin},${y}`);
+            }
+            break;
+        }
+        case 'fill': {
+            // fill:x1,y1,x2,y2 - fill from corner to corner
+            const fillParts = parts[1].split(',');
+            const fx1 = parseInt(fillParts[0], 10);
+            const fy1 = parseInt(fillParts[1], 10);
+            const fx2 = parseInt(fillParts[2], 10);
+            const fy2 = parseInt(fillParts[3], 10);
+            for (let y = Math.min(fy1, fy2); y <= Math.max(fy1, fy2); y++) {
+                for (let x = Math.min(fx1, fx2); x <= Math.max(fx1, fx2); x++) {
+                    tiles.push(`${x},${y}`);
+                }
+            }
+            break;
+        }
+        case 'circle': {
+            // circle:cx,cy,r - filled circle at center (cx,cy) with radius r
+            const circleParts = parts[1].split(',');
+            const cx = parseInt(circleParts[0], 10);
+            const cy = parseInt(circleParts[1], 10);
+            const r = parseInt(circleParts[2], 10);
+            for (let y = cy - r; y <= cy + r; y++) {
+                for (let x = cx - r; x <= cx + r; x++) {
+                    if ((x - cx) ** 2 + (y - cy) ** 2 <= r ** 2) {
+                        if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
+                            tiles.push(`${x},${y}`);
+                        }
+                    }
+                }
+            }
+            break;
+        }
+        case 'ring': {
+            // ring:cx,cy,r - hollow circle (just the perimeter)
+            const ringParts = parts[1].split(',');
+            const rcx = parseInt(ringParts[0], 10);
+            const rcy = parseInt(ringParts[1], 10);
+            const rr = parseInt(ringParts[2], 10);
+            // Use parametric circle
+            for (let angle = 0; angle < 360; angle += 1) {
+                const rad = (angle * Math.PI) / 180;
+                const x = Math.round(rcx + rr * Math.cos(rad));
+                const y = Math.round(rcy + rr * Math.sin(rad));
+                const key = `${x},${y}`;
+                if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight && !tiles.includes(key)) {
+                    tiles.push(key);
+                }
+            }
+            break;
+        }
+        case 'expr': {
+            // expr:EQUATION:xMin:xMax - explicit algebraic expression
+            const expr = parts[1];
+            const xMin = parts[2] ? parseInt(parts[2], 10) : 0;
+            const xMax = parts[3] ? parseInt(parts[3], 10) : gridWidth - 1;
+            for (let x = xMin; x <= xMax; x++) {
+                const y = evaluateExpression(expr, x);
+                if (y >= 0 && y < gridHeight) {
+                    tiles.push(`${x},${y}`);
+                }
+            }
+            break;
+        }
+        default:
+            throw new Error(`Unknown range command: ${command}. Valid: row, col, hline, vline, line, rect, box, border, fill, circle, ring, expr, x=, y=`);
+    }
+
+    return tiles;
+}
+
+/**
  * Handle updating terrain during an active encounter
  */
 export async function handleUpdateTerrain(args: unknown, ctx: SessionContext) {
@@ -1964,21 +2301,35 @@ export async function handleUpdateTerrain(args: unknown, ctx: SessionContext) {
     if (!state.terrain[terrainKey]) {
         state.terrain[terrainKey] = [];
     }
-    
+
     const terrainArray = state.terrain[terrainKey] as string[];
     let modified = 0;
 
+    // Expand ranges into tiles if provided
+    const gridWidth = parsed.gridWidth ?? 100;
+    const gridHeight = parsed.gridHeight ?? 100;
+    let allTiles: string[] = parsed.tiles ? [...parsed.tiles] : [];
+
+    if (parsed.ranges) {
+        for (const range of parsed.ranges) {
+            const expanded = parseRangeShortcut(range, gridWidth, gridHeight);
+            allTiles.push(...expanded);
+        }
+    }
+
     if (parsed.operation === 'add') {
-        // Add tiles that don't already exist
-        for (const tile of parsed.tiles) {
-            if (!terrainArray.includes(tile)) {
+        // Add tiles that don't already exist (use Set for efficiency with large arrays)
+        const existingSet = new Set(terrainArray);
+        for (const tile of allTiles) {
+            if (!existingSet.has(tile)) {
                 terrainArray.push(tile);
+                existingSet.add(tile);
                 modified++;
             }
         }
     } else {
         // Remove tiles
-        const tileSet = new Set(parsed.tiles);
+        const tileSet = new Set(allTiles);
         const originalLength = terrainArray.length;
         state.terrain[terrainKey] = terrainArray.filter(t => !tileSet.has(t));
         modified = originalLength - (state.terrain[terrainKey] as string[]).length;
@@ -1991,14 +2342,14 @@ export async function handleUpdateTerrain(args: unknown, ctx: SessionContext) {
 
     // Build response
     const stateJson = buildStateJson(state, parsed.encounterId);
-    let output = `\\n⛏️ TERRAIN UPDATED\\n`;
-    output += `├─ Operation: ${parsed.operation.toUpperCase()}\\n`;
-    output += `├─ Type: ${parsed.terrainType}\\n`;
-    output += `├─ Tiles modified: ${modified}\\n`;
-    output += `└─ Total ${parsed.terrainType}: ${(state.terrain[terrainKey] as string[]).length}\\n`;
+    let output = `\n⛏️ TERRAIN UPDATED\n`;
+    output += `├─ Operation: ${parsed.operation.toUpperCase()}\n`;
+    output += `├─ Type: ${parsed.terrainType}\n`;
+    output += `├─ Tiles modified: ${modified}\n`;
+    output += `└─ Total ${parsed.terrainType}: ${(state.terrain[terrainKey] as string[]).length}\n`;
 
     // Append JSON for frontend parsing
-    output += `\\n\\n<!-- STATE_JSON\\n${JSON.stringify(stateJson)}\\nSTATE_JSON -->`;
+    output += `\n\n<!-- STATE_JSON\n${JSON.stringify(stateJson)}\nSTATE_JSON -->`;
 
     return {
         content: [{
@@ -2495,9 +2846,34 @@ export async function handleGenerateTerrainPattern(args: unknown, ctx: SessionCo
         state.props = [];
     }
 
-    // Generate pattern
-    const patternGen = getPatternGenerator(parsed.pattern);
-    const result = patternGen(parsed.origin.x, parsed.origin.y, parsed.width, parsed.height);
+    // Generate pattern - handle maze-specific options
+    type PatternResult = { obstacles: string[]; water: string[]; difficultTerrain: string[]; props: Array<{position: string; label: string; heightFeet: number; propType: string; cover: string}> };
+    let result: PatternResult;
+    if (parsed.pattern === 'maze') {
+        // Import maze generator with corridor width support
+        const { generateMaze } = await import('./terrain-patterns.js');
+        result = generateMaze(
+            parsed.origin.x,
+            parsed.origin.y,
+            parsed.width,
+            parsed.height,
+            parsed.seed,
+            parsed.corridorWidth ?? 1
+        );
+    } else if (parsed.pattern === 'maze_rooms') {
+        const { generateMazeWithRooms } = await import('./terrain-patterns.js');
+        result = generateMazeWithRooms(
+            parsed.origin.x,
+            parsed.origin.y,
+            parsed.width,
+            parsed.height,
+            parsed.seed,
+            parsed.roomCount ?? 5
+        );
+    } else {
+        const patternGen = getPatternGenerator(parsed.pattern as any);
+        result = patternGen(parsed.origin.x, parsed.origin.y, parsed.width, parsed.height, parsed.seed);
+    }
     
     // Add generated terrain to state
     state.terrain.obstacles.push(...result.obstacles);
