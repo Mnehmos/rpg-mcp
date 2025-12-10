@@ -15,6 +15,10 @@ import { CharacterRepository } from '../storage/repos/character.repo.js';
 import { ItemRepository } from '../storage/repos/item.repo.js';
 import { InventoryRepository } from '../storage/repos/inventory.repo.js';
 import { PartyRepository } from '../storage/repos/party.repo.js';
+import { POIRepository } from '../storage/repos/poi.repo.js';
+import { SpatialRepository } from '../storage/repos/spatial.repo.js';
+import { POICategory, POIIcon } from '../schema/poi.js';
+import { BiomeType } from '../schema/spatial.js';
 import { expandCreatureTemplate } from '../data/creature-presets.js';
 import { getItemPreset, getArmorPreset } from '../data/items/index.js';
 import { getCombatManager } from './state/combat-manager.js';
@@ -150,7 +154,9 @@ function ensureDb() {
         charRepo: new CharacterRepository(db),
         itemRepo: new ItemRepository(db),
         inventoryRepo: new InventoryRepository(db),
-        partyRepo: new PartyRepository(db)
+        partyRepo: new PartyRepository(db),
+        poiRepo: new POIRepository(db),
+        spatialRepo: new SpatialRepository(db)
     };
 }
 
@@ -335,6 +341,117 @@ Example:
                 x: z.number().int().optional(),
                 y: z.number().int().optional()
             }).optional()
+        })
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SPAWN_POPULATED_LOCATION
+    // ─────────────────────────────────────────────────────────────────────────
+    SPAWN_POPULATED_LOCATION: {
+        name: 'spawn_populated_location',
+        description: `Create a complete location with POI, optional room network, and inhabitants in one call.
+
+REPLACES: create_poi + create_network + N×create_room + N×spawn_character + N×(create_item + place_item)
+TOKEN SAVINGS: ~90%
+
+Example - Goblin Cave:
+{
+  "worldId": "world-123",
+  "name": "Shadowfang Cave",
+  "category": "dungeon",
+  "icon": "cave",
+  "position": "50,30",
+  "description": "A dark cave system rumored to house goblin raiders",
+  "level": 3,
+  "tags": ["goblin", "cave", "treasure"],
+  "rooms": [
+    { "name": "Cave Entrance", "description": "A shadowy opening in the hillside...", "biome": "cavern" },
+    { "name": "Guard Chamber", "description": "A small alcove where guards keep watch...", "biome": "cavern", "exits": ["north"] }
+  ],
+  "inhabitants": [
+    { "template": "goblin:warrior", "room": 0, "count": 2 },
+    { "template": "goblin:archer", "room": 1 },
+    { "template": "hobgoblin:captain", "name": "Skullcrusher", "room": 1 }
+  ],
+  "loot": [
+    { "preset": "longsword", "room": 1 },
+    { "preset": "potion_healing", "room": 0, "count": 2 }
+  ]
+}
+
+Example - Village Inn:
+{
+  "worldId": "world-123",
+  "name": "The Prancing Pony",
+  "category": "commercial",
+  "icon": "inn",
+  "position": "100,75",
+  "population": 15,
+  "discoveryState": "discovered",
+  "rooms": [
+    { "name": "Common Room", "description": "A warm tavern with crackling fireplace...", "biome": "urban" },
+    { "name": "Kitchen", "description": "The busy kitchen smells of fresh bread...", "biome": "urban", "exits": ["west"] }
+  ],
+  "inhabitants": [
+    { "name": "Barliman Butterbur", "race": "Human", "characterType": "npc", "room": 0 },
+    { "template": "bandit", "name": "Suspicious Stranger", "characterType": "neutral", "room": 0 }
+  ]
+}
+
+Categories: settlement, fortification, dungeon, landmark, religious, commercial, natural, hidden
+Icons: city, town, village, castle, fort, tower, dungeon, cave, ruins, temple, shrine, inn, market, mine, farm, camp
+Biomes: forest, mountain, urban, dungeon, coastal, cavern, divine, arcane`,
+        inputSchema: z.object({
+            // POI basics
+            worldId: z.string().describe('World ID to create the location in'),
+            name: z.string().min(1).max(100).describe('Location name'),
+            category: z.enum(['settlement', 'fortification', 'dungeon', 'landmark', 'religious', 'commercial', 'natural', 'hidden'])
+                .describe('POI category'),
+            icon: z.enum(['city', 'town', 'village', 'castle', 'fort', 'tower', 'dungeon', 'cave', 'ruins', 'temple', 'shrine', 'inn', 'market', 'mine', 'farm', 'camp', 'portal', 'monument', 'tree', 'mountain', 'lake', 'waterfall', 'bridge', 'crossroads', 'unknown'])
+                .describe('Map icon'),
+            position: z.union([
+                z.string().regex(/^\d+,\d+$/).describe('Position as "x,y"'),
+                z.object({ x: z.number().int().min(0), y: z.number().int().min(0) })
+            ]).describe('World map position'),
+            description: z.string().max(500).optional().describe('Brief description for map tooltip'),
+
+            // POI metadata
+            population: z.number().int().min(0).optional().default(0).describe('Population for settlements'),
+            level: z.number().int().min(1).max(20).optional().describe('Suggested character level for dungeons'),
+            tags: z.array(z.string()).optional().default([]).describe('Searchable tags'),
+            discoveryState: z.enum(['unknown', 'rumored', 'discovered', 'explored', 'mapped']).optional().default('unknown'),
+            discoveryDC: z.number().int().min(0).max(30).optional().describe('DC to discover if hidden'),
+
+            // Room network (optional)
+            rooms: z.array(z.object({
+                name: z.string().min(1).max(100),
+                description: z.string().min(10).max(2000).describe('Room description'),
+                biome: z.enum(['forest', 'mountain', 'urban', 'dungeon', 'coastal', 'cavern', 'divine', 'arcane'])
+                    .optional().default('dungeon'),
+                exits: z.array(z.enum(['north', 'south', 'east', 'west', 'up', 'down'])).optional()
+                    .describe('Directions this room connects to (auto-linked sequentially if not specified)')
+            })).optional().describe('Rooms to create (first room is entrance)'),
+
+            // Inhabitants
+            inhabitants: z.array(z.object({
+                // From template OR manual
+                template: z.string().optional().describe('Creature template like "goblin:warrior"'),
+                name: z.string().optional().describe('Character name (required if no template)'),
+                race: z.string().optional().default('Human'),
+                characterClass: z.string().optional().default('commoner'),
+                level: z.number().int().min(1).optional(),
+                characterType: z.enum(['npc', 'enemy', 'neutral']).optional().default('enemy'),
+                // Placement
+                room: z.number().int().min(0).optional().describe('Room index to place in (0 = entrance)'),
+                count: z.number().int().min(1).max(20).optional().default(1).describe('Number to spawn')
+            })).optional().default([]).describe('NPCs/creatures to populate the location'),
+
+            // Loot/items
+            loot: z.array(z.object({
+                preset: z.string().describe('Item preset name'),
+                room: z.number().int().min(0).optional().describe('Room index to place in'),
+                count: z.number().int().min(1).max(99).optional().default(1)
+            })).optional().default([]).describe('Items to place in the location')
         })
     }
 } as const;
@@ -789,6 +906,303 @@ export async function handleInitializeSession(args: unknown, _ctx: SessionContex
                     leaderId
                 },
                 message: `Session initialized: ${parsed.partyName} with ${createdCharacters.length} characters`
+            }, null, 2)
+        }]
+    };
+}
+
+/**
+ * Handle spawn_populated_location
+ */
+export async function handleSpawnPopulatedLocation(args: unknown, _ctx: SessionContext) {
+    const parsed = CompositeTools.SPAWN_POPULATED_LOCATION.inputSchema.parse(args);
+    const { charRepo, itemRepo, spatialRepo, poiRepo } = ensureDb();
+
+    const now = new Date().toISOString();
+
+    // Parse position
+    let posX: number;
+    let posY: number;
+    if (typeof parsed.position === 'string') {
+        const parts = parsed.position.split(',');
+        posX = parseInt(parts[0], 10);
+        posY = parseInt(parts[1], 10);
+    } else {
+        posX = parsed.position.x;
+        posY = parsed.position.y;
+    }
+
+    // Create network and rooms if rooms are specified
+    let networkId: string | undefined;
+    let entranceRoomId: string | undefined;
+    const createdRooms: { id: string; name: string; index: number }[] = [];
+
+    if (parsed.rooms && parsed.rooms.length > 0) {
+        // Create the node network
+        networkId = randomUUID();
+        spatialRepo.createNetwork({
+            id: networkId,
+            name: `${parsed.name} Network`,
+            type: 'cluster',
+            worldId: parsed.worldId,
+            centerX: posX,
+            centerY: posY,
+            createdAt: now,
+            updatedAt: now
+        });
+
+        // Create rooms
+        const roomIds: string[] = [];
+        for (let i = 0; i < parsed.rooms.length; i++) {
+            const roomSpec = parsed.rooms[i];
+            const roomId = randomUUID();
+            roomIds.push(roomId);
+
+            if (i === 0) {
+                entranceRoomId = roomId;
+            }
+
+            spatialRepo.create({
+                id: roomId,
+                name: roomSpec.name,
+                baseDescription: roomSpec.description,
+                biomeContext: (roomSpec.biome || 'dungeon') as BiomeType,
+                atmospherics: [],
+                exits: [],
+                entityIds: [],
+                networkId,
+                localX: i % 5, // Simple grid layout
+                localY: Math.floor(i / 5),
+                visitedCount: 0,
+                createdAt: now,
+                updatedAt: now
+            });
+
+            createdRooms.push({ id: roomId, name: roomSpec.name, index: i });
+        }
+
+        // Auto-link rooms sequentially (each room connects to next with north/south)
+        for (let i = 0; i < roomIds.length - 1; i++) {
+            const currentRoom = parsed.rooms[i];
+            // Only auto-link if exits not explicitly specified
+            if (!currentRoom.exits || currentRoom.exits.length === 0) {
+                // Link current to next (north)
+                spatialRepo.addExit(roomIds[i], {
+                    direction: 'north',
+                    targetNodeId: roomIds[i + 1],
+                    type: 'OPEN'
+                });
+                // Link next to current (south)
+                spatialRepo.addExit(roomIds[i + 1], {
+                    direction: 'south',
+                    targetNodeId: roomIds[i],
+                    type: 'OPEN'
+                });
+            }
+        }
+    }
+
+    // Create POI
+    const poiId = randomUUID();
+    poiRepo.create({
+        id: poiId,
+        worldId: parsed.worldId,
+        x: posX,
+        y: posY,
+        name: parsed.name,
+        description: parsed.description,
+        category: parsed.category as POICategory,
+        icon: parsed.icon as POIIcon,
+        networkId,
+        entranceRoomId,
+        discoveryState: parsed.discoveryState || 'unknown',
+        discoveredBy: [],
+        discoveryDC: parsed.discoveryDC,
+        childPOIIds: [],
+        population: parsed.population || 0,
+        level: parsed.level,
+        tags: parsed.tags || [],
+        createdAt: now,
+        updatedAt: now
+    });
+
+    // Spawn inhabitants
+    const createdInhabitants: { id: string; name: string; template?: string; roomId?: string; roomName?: string }[] = [];
+
+    for (const inhab of parsed.inhabitants || []) {
+        const count = inhab.count || 1;
+
+        for (let c = 0; c < count; c++) {
+            const characterId = randomUUID();
+            let characterData: Character;
+
+            if (inhab.template) {
+                const preset = expandCreatureTemplate(inhab.template, inhab.name);
+                if (!preset) {
+                    console.warn(`Unknown creature template: ${inhab.template}, skipping`);
+                    continue;
+                }
+
+                // For multiple spawns, add number suffix
+                const displayName = count > 1 && !inhab.name
+                    ? `${preset.name} ${c + 1}`
+                    : (inhab.name || preset.name);
+
+                characterData = buildCharacter({
+                    id: characterId,
+                    name: displayName,
+                    stats: preset.stats,
+                    hp: preset.hp,
+                    maxHp: preset.maxHp,
+                    ac: preset.ac,
+                    level: inhab.level || preset.level,
+                    characterType: inhab.characterType || preset.characterType,
+                    race: inhab.race || preset.race || 'Unknown',
+                    characterClass: inhab.characterClass || preset.characterClass || 'monster',
+                    resistances: preset.resistances || [],
+                    vulnerabilities: preset.vulnerabilities || [],
+                    immunities: preset.immunities || [],
+                    createdAt: now,
+                    updatedAt: now
+                });
+            } else {
+                // Manual character
+                if (!inhab.name) {
+                    console.warn('Inhabitant without template must have a name, skipping');
+                    continue;
+                }
+
+                const stats = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+                const level = inhab.level || 1;
+                const conMod = Math.floor((stats.con - 10) / 2);
+                const hp = 8 + conMod + (level - 1) * (5 + conMod);
+
+                characterData = buildCharacter({
+                    id: characterId,
+                    name: inhab.name,
+                    stats,
+                    hp,
+                    maxHp: hp,
+                    ac: 10,
+                    level,
+                    characterType: inhab.characterType || 'npc',
+                    race: inhab.race || 'Human',
+                    characterClass: inhab.characterClass || 'commoner',
+                    createdAt: now,
+                    updatedAt: now
+                });
+            }
+
+            // Set current room if rooms exist
+            const roomIndex = inhab.room ?? 0;
+            let roomId: string | undefined;
+            let roomName: string | undefined;
+
+            if (createdRooms.length > 0 && roomIndex < createdRooms.length) {
+                roomId = createdRooms[roomIndex].id;
+                roomName = createdRooms[roomIndex].name;
+                characterData.currentRoomId = roomId;
+            }
+
+            charRepo.create(characterData);
+
+            // Add entity to room
+            if (roomId) {
+                spatialRepo.addEntityToRoom(roomId, characterId);
+            }
+
+            createdInhabitants.push({
+                id: characterId,
+                name: characterData.name,
+                template: inhab.template,
+                roomId,
+                roomName
+            });
+        }
+    }
+
+    // Place loot
+    const placedLoot: { itemId: string; name: string; count: number; roomId?: string; roomName?: string }[] = [];
+
+    for (const lootSpec of parsed.loot || []) {
+        const preset = getItemPreset(lootSpec.preset);
+        if (!preset) {
+            console.warn(`Unknown item preset: ${lootSpec.preset}, skipping`);
+            continue;
+        }
+
+        // Create item
+        const itemId = randomUUID();
+        let itemType: 'weapon' | 'armor' | 'consumable' | 'quest' | 'misc' | 'scroll';
+        if (preset.type === 'weapon') itemType = 'weapon';
+        else if (preset.type === 'armor') itemType = 'armor';
+        else if (preset.type === 'gear' || preset.type === 'tool') itemType = 'misc';
+        else if (preset.type === 'consumable') itemType = 'consumable';
+        else if (preset.type === 'magic') itemType = (preset as any).baseItem ? 'weapon' : 'misc';
+        else itemType = 'misc';
+
+        const item = buildItem({
+            id: itemId,
+            name: preset.name,
+            description: (preset as any).description || '',
+            type: itemType,
+            weight: (preset as any).weight || 0,
+            value: (preset as any).value || 0,
+            properties: preset as any,
+            createdAt: now,
+            updatedAt: now
+        });
+        itemRepo.create(item);
+
+        // Determine room
+        const roomIndex = lootSpec.room ?? 0;
+        let roomId: string | undefined;
+        let roomName: string | undefined;
+
+        if (createdRooms.length > 0 && roomIndex < createdRooms.length) {
+            roomId = createdRooms[roomIndex].id;
+            roomName = createdRooms[roomIndex].name;
+            // Add item to room's entity list
+            spatialRepo.addEntityToRoom(roomId, itemId);
+        }
+
+        placedLoot.push({
+            itemId,
+            name: preset.name,
+            count: lootSpec.count || 1,
+            roomId,
+            roomName
+        });
+    }
+
+    return {
+        content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+                poi: {
+                    id: poiId,
+                    name: parsed.name,
+                    category: parsed.category,
+                    icon: parsed.icon,
+                    position: { x: posX, y: posY },
+                    discoveryState: parsed.discoveryState || 'unknown',
+                    level: parsed.level,
+                    population: parsed.population || 0
+                },
+                network: networkId ? {
+                    id: networkId,
+                    roomCount: createdRooms.length,
+                    entranceRoomId
+                } : null,
+                rooms: createdRooms,
+                inhabitants: createdInhabitants,
+                loot: placedLoot,
+                summary: {
+                    totalInhabitants: createdInhabitants.length,
+                    totalLootItems: placedLoot.reduce((sum, l) => sum + l.count, 0),
+                    totalRooms: createdRooms.length
+                },
+                message: `Created ${parsed.name} with ${createdRooms.length} rooms, ${createdInhabitants.length} inhabitants, and ${placedLoot.length} loot items`
             }, null, 2)
         }]
     };

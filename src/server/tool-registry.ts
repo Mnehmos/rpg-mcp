@@ -35,7 +35,7 @@ import { ContextTools, handleGetNarrativeContext } from './context-tools.js';
 import { ProgressionTools, handleAddXp, handleGetLevelProgression, handleLevelUp } from './progression-tools.js';
 import { SkillCheckTools, handleRollSkillCheck, handleRollAbilityCheck, handleRollSavingThrow } from './skill-check-tools.js';
 import { NarrativeTools, handleAddNarrativeNote, handleSearchNarrativeNotes, handleUpdateNarrativeNote, handleGetNarrativeNote, handleDeleteNarrativeNote, handleGetNarrativeContextNotes } from './narrative-tools.js';
-import { CompositeTools, handleSetupTacticalEncounter, handleSpawnEquippedCharacter, handleInitializeSession } from './composite-tools.js';
+import { CompositeTools, handleSetupTacticalEncounter, handleSpawnEquippedCharacter, handleInitializeSession, handleSpawnPopulatedLocation } from './composite-tools.js';
 
 // Helper to create metadata
 // deferLoading defaults to true (most tools should be deferred)
@@ -1424,6 +1424,13 @@ export function buildToolRegistry(): ToolRegistry {
         ['Session initialization', 'Party creation', 'Character batch creation', 'Starting location'], true, 'high', false),
       schema: CompositeTools.INITIALIZE_SESSION.inputSchema,
       handler: handleInitializeSession
+    },
+    [CompositeTools.SPAWN_POPULATED_LOCATION.name]: {
+      metadata: meta(CompositeTools.SPAWN_POPULATED_LOCATION.name, CompositeTools.SPAWN_POPULATED_LOCATION.description, 'composite',
+        ['location', 'poi', 'spawn', 'populate', 'dungeon', 'cave', 'inn', 'tavern', 'room', 'network', 'npc', 'creature', 'loot'],
+        ['POI creation', 'Room network generation', 'NPC spawning', 'Loot placement', 'Location setup'], false, 'medium', false),
+      schema: CompositeTools.SPAWN_POPULATED_LOCATION.inputSchema,
+      handler: handleSpawnPopulatedLocation
     }
     // Note: search_tools and load_tool_schema are registered separately in index.ts with full handlers
   };
