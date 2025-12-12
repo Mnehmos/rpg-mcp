@@ -6,9 +6,46 @@
 [![Tests](https://img.shields.io/badge/tests-800%2B%20passing-brightgreen.svg)]()
 [![Tools](https://img.shields.io/badge/MCP%20tools-145+-blue.svg)]()
 
-**A deterministic, schema-driven, multi-world simulation engine for embodied AI agents.**
+**A rules-enforced RPG backend that turns any LLM into a game master who can't cheat.**
 
-RPG-MCP is not a game—it's a **world kernel**. It provides the physics, constraints, persistence, and deterministic execution layer that allows LLM agents to inhabit a simulated reality with real bodies, real limits, and real consequences.
+---
+
+## What Is This? (Start Here)
+
+**You are the player. The AI is the dungeon master.**
+
+You talk to an AI (Claude, GPT, etc.) in natural language. You say things like "I attack the goblin" or "I search the room for traps." The AI narrates what happens and describes the world.
+
+**The difference from pure AI storytelling:** This engine enforces the rules. When you attack, it actually rolls dice, checks armor class, calculates damage, and updates HP in a real database. The AI can't just decide you hit or miss—the math happens, and both you and the AI see the result.
+
+### What can you actually do?
+
+- **Explore procedurally generated worlds** with 28+ biome types
+- **Fight enemies** using D&D 5e-style combat (initiative, AC, damage rolls, death saves)
+- **Cast spells** with real slot tracking—if you're out of slots, you can't cast
+- **Manage inventory** with equipment slots, weight, and item properties
+- **Complete quests** with tracked objectives and rewards
+- **Interact with NPCs** who remember your conversations across sessions
+- **Everything persists**—close the game, come back tomorrow, your character is exactly where you left them
+
+### Who is this for?
+
+- **Solo RPG players** who want AI-driven adventures with mechanical integrity
+- **People frustrated with AI RPGs** that fall apart when you ask "wait, how much HP do I have?"
+- **Developers** building AI game integrations who need a reference implementation
+
+### How do I play?
+
+1. Install the MCP server (see Installation below)
+2. Connect it to Claude Desktop (or any MCP-compatible client)
+3. Tell the AI: "Let's start a new game. Create a character for me."
+4. Play naturally—the AI handles narration, the engine handles mechanics
+
+---
+
+## For Developers
+
+RPG-MCP is a **world kernel**—the physics, constraints, persistence, and deterministic execution layer that allows LLM agents to inhabit a simulated reality with real bodies, real limits, and real consequences.
 
 ---
 
