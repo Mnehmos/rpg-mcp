@@ -1268,8 +1268,8 @@ describe('Category 10: Spell Save DC & Attack Rolls', () => {
         const encounterResponse = await handleCreateEncounter({
             seed: 'test-encounter-10.4',
             participants: [
-                // Give wizard plenty of slots for repeated testing
-                { id: wizard.id!, name: 'Wizard', hp: 20, maxHp: 20, initiativeBonus: 0, position: { x: 0, y: 0 }, spellSlots: { '3': 10 } },
+                // Give wizard plenty of slots for repeated testing - use proper SpellSlots format
+                { id: wizard.id!, name: 'Wizard', hp: 20, maxHp: 20, initiativeBonus: 0, position: { x: 0, y: 0 }, spellSlots: { level1: { current: 4, max: 4 }, level2: { current: 3, max: 3 }, level3: { current: 10, max: 10 } } },
                 { id: target.id, name: 'Target', hp: 100, maxHp: 100, initiativeBonus: 0, position: { x: 5, y: 5 } }
             ]
         }, getTestContext() as any);
