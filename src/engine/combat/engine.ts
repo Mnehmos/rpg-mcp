@@ -68,6 +68,10 @@ export interface CombatParticipant {
     deathSaveFailures?: number;   // 0-3, 3 = dead
     isStabilized?: boolean;       // Unconscious but won't die
     isDead?: boolean;             // Permanently defeated
+    // COMBAT STATS (Auto-resolution)
+    ac?: number;               // Armor Class
+    attackDamage?: string;     // Default attack damage (e.g., "1d6+2")
+    attackBonus?: number;      // Default attack bonus used if none provided
 }
 
 /**
@@ -193,6 +197,9 @@ export class CombatEngine {
             const rolledInitiative = this.rng.d20(p.initiativeBonus);
             return {
                 ...p,
+                ac: p.ac,
+                attackDamage: p.attackDamage,
+                attackBonus: p.attackBonus,
                 initiative: rolledInitiative,
                 // Auto-detect isEnemy if not explicitly set
                 isEnemy: p.isEnemy ?? this.detectIsEnemy(p.id, p.name),
@@ -258,30 +265,45 @@ export class CombatEngine {
 
     /**
      * Auto-detect if a participant is an enemy based on ID/name patterns
+     * 
+     * IMPORTANT: UUIDs (like "9e48fa16-0ee4-4b99-a1e0-a162528d1e24") are typically 
+     * player characters created via the UI. Pattern-based IDs (like "goblin-1", 
+     * "orc-archer-2") are typically spawned enemies. Default to false for UUIDs.
      */
     private detectIsEnemy(id: string, name: string): boolean {
         const idLower = id.toLowerCase();
         const nameLower = name.toLowerCase();
 
-        // Common enemy patterns
+        // Common enemy patterns - check NAME first (most reliable for determination)
         const enemyPatterns = [
             'goblin', 'orc', 'wolf', 'bandit', 'skeleton', 'zombie',
             'dragon', 'troll', 'ogre', 'kobold', 'gnoll', 'demon',
             'devil', 'undead', 'enemy', 'monster', 'creature', 'beast',
             'spider', 'rat', 'bat', 'slime', 'ghost', 'wraith',
-            'dracolich', 'lich', 'vampire', 'golem', 'elemental'
+            'dracolich', 'lich', 'vampire', 'golem', 'elemental',
+            'cultist', 'thug', 'assassin', 'minion', 'guard', 'scout',
+            'warrior', 'archer', 'mage', 'shaman', 'warlord', 'boss'
         ];
 
-        // Check if ID or name contains enemy patterns
+        // Check NAME for enemy patterns (more reliable since IDs can be UUIDs)
         for (const pattern of enemyPatterns) {
-            if (idLower.includes(pattern) || nameLower.includes(pattern)) {
+            if (nameLower.includes(pattern)) {
+                return true;
+            }
+        }
+
+        // Check ID for enemy patterns (for pattern-based IDs like "goblin-1")
+        for (const pattern of enemyPatterns) {
+            if (idLower.includes(pattern)) {
                 return true;
             }
         }
 
         // Common player/ally patterns (not enemies)
         const allyPatterns = [
-            'hero', 'player', 'pc', 'ally', 'companion', 'npc-friendly'
+            'hero', 'player', 'pc', 'ally', 'companion', 'npc-friendly',
+            'party', 'adventurer', 'cleric', 'paladin', 'ranger', 'rogue',
+            'wizard', 'sorcerer', 'warlock', 'bard', 'druid', 'monk', 'fighter'
         ];
 
         for (const pattern of allyPatterns) {
@@ -290,8 +312,23 @@ export class CombatEngine {
             }
         }
 
-        // Default: assume it's an enemy if not clearly a player
-        return !idLower.startsWith('player') && !idLower.startsWith('hero');
+        // Check if ID looks like a UUID (player characters created via UI have UUIDs)
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidPattern.test(id)) {
+            // UUIDs are typically player characters - default to NOT enemy
+            return false;
+        }
+
+        // Default: for non-UUID IDs that don't match patterns, check if ID starts with enemy pattern
+        // This catches pattern-based IDs like "enemy-1" or "mob-3"
+        if (idLower.startsWith('enemy') || idLower.startsWith('mob') || idLower.startsWith('hostile')) {
+            return true;
+        }
+
+        // Fallback default: unknown entities default to NOT enemy
+        // Reasoning: It's safer to have an enemy show as friendly (player corrects it)
+        // than to have a player character show as enemy (breaks immersion)
+        return false;
     }
 
     /**
@@ -511,7 +548,7 @@ export class CombatEngine {
         targetId: string,
         attackBonus: number,
         dc: number,
-        damage: number,
+        damage: number | string,
         damageType?: string  // HIGH-002: Optional damage type for resistance calculation
     ): CombatActionResult {
         if (!this.state) throw new Error('No active combat');
@@ -530,10 +567,26 @@ export class CombatEngine {
         let damageDealt = 0;
         let damageModifier: 'immune' | 'resistant' | 'vulnerable' | 'normal' = 'normal';
 
+        // Calculate base damage from number or string
+        let baseDamageVal = 0;
+        let damageBreakdownStr = '';
+
+        if (typeof damage === 'string') {
+            const dmgResult = this.rng.rollDamageDetailed(damage);
+            baseDamageVal = dmgResult.total;
+            damageBreakdownStr = ` (${dmgResult.rolls.join('+')}${dmgResult.modifier >= 0 ? '+' + dmgResult.modifier : dmgResult.modifier})`;
+        } else {
+            baseDamageVal = damage;
+        }
+
         if (attackRoll.isHit) {
-            const baseDamage = attackRoll.isCrit ? damage * 2 : damage;
+            // Critical Hit: Double the dice (approx. double the value for now if passing number)
+            // If string was passed, we ideally double the DICE, but for now double the total is consistent with current impl.
+            // TODO: Implement proper crit rules (double dice) later using rollDamageDetailed
+            const finalBaseDamage = attackRoll.isCrit ? baseDamageVal * 2 : baseDamageVal;
+            
             // HIGH-002: Apply resistance/vulnerability/immunity
-            const modResult = this.calculateDamageWithModifiers(baseDamage, damageType, target);
+            const modResult = this.calculateDamageWithModifiers(finalBaseDamage, damageType, target);
             damageDealt = modResult.finalDamage;
             damageModifier = modResult.modifier;
             target.hp = Math.max(0, target.hp - damageDealt);
@@ -566,7 +619,7 @@ export class CombatEngine {
                 modStr = ' [Vulnerable - Doubled!]';
             }
 
-            breakdown += `\n\n💥 Damage: ${damageDealt}${typeStr}${attackRoll.isCrit ? ' (crit)' : ''}${modStr}\n`;
+            breakdown += `\n\n💥 Damage: ${damageDealt}${typeStr}${damageBreakdownStr}${attackRoll.isCrit ? ' (crit)' : ''}${modStr}\n`;
             breakdown += `   ${target.name}: ${hpBefore} → ${target.hp}/${target.maxHp} HP`;
             if (defeated) {
                 breakdown += ` [DEFEATED]`;
@@ -1033,27 +1086,43 @@ export class CombatEngine {
 
     /**
      * Enhanced nextTurn with condition processing and legendary action reset
+     * Now auto-skips dead participants (HP <= 0)
      */
     nextTurnWithConditions(): CombatParticipant | null {
         if (!this.state) return null;
 
         // Process end-of-turn conditions for current participant (if not LAIR)
         const currentParticipant = this.getCurrentParticipant();
-        if (currentParticipant) {
+        if (currentParticipant && currentParticipant.hp > 0) {
             this.processEndOfTurnConditions(currentParticipant);
         }
 
-        // Advance turn
-        this.state.currentTurnIndex++;
+        // Advance turn, automatically skipping dead participants
+        let iterations = 0;
+        const maxIterations = this.state.turnOrder.length + 1; // Safety limit
+        let newParticipant: CombatParticipant | null = null;
 
-        if (this.state.currentTurnIndex >= this.state.turnOrder.length) {
-            this.state.currentTurnIndex = 0;
-            this.state.round++;
-        }
+        do {
+            // Advance turn index
+            this.state.currentTurnIndex++;
 
-        // Process start-of-turn conditions for new current participant (if not LAIR)
-        const newParticipant = this.getCurrentParticipant();
-        if (newParticipant) {
+            if (this.state.currentTurnIndex >= this.state.turnOrder.length) {
+                this.state.currentTurnIndex = 0;
+                this.state.round++;
+            }
+
+            newParticipant = this.getCurrentParticipant();
+            iterations++;
+
+            // Exit if we found a living participant or exhausted all options
+        } while (
+            newParticipant && 
+            newParticipant.hp <= 0 && 
+            iterations < maxIterations
+        );
+
+        // Process start-of-turn conditions for new current participant (if alive)
+        if (newParticipant && newParticipant.hp > 0) {
             this.processStartOfTurnConditions(newParticipant);
         }
 

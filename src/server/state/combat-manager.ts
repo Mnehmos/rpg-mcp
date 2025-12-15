@@ -22,6 +22,10 @@ export class CombatManager {
         return Array.from(this.encounters.keys());
     }
 
+    clear(): void {
+        this.encounters.clear();
+    }
+
     /**
      * Check if a character is participating in any active encounter
      * Used to prevent resting during combat

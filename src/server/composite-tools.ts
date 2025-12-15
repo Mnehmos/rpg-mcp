@@ -768,6 +768,9 @@ export async function handleSetupTacticalEncounter(args: unknown, _ctx: SessionC
             name: preset.name,
             hp: preset.hp,
             maxHp: preset.maxHp,
+            ac: preset.ac,
+            attackDamage: preset.defaultAttack?.damage,
+            attackBonus: preset.defaultAttack?.toHit,
             initiative: 0, // Will be rolled
             initiativeBonus: dexMod,
             isEnemy: p.isEnemy ?? true,

@@ -1,4 +1,5 @@
 // Main entry point for the Unified MCP Simulation Server
+console.error('rpg-mcp-server v1.0.5 - FIXED SPELL VALIDATION');
 export * from './schema/index.js';
 export * from './storage/index.js';
 

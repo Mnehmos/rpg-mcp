@@ -17,6 +17,7 @@ import { ConcentrationRepository } from '../storage/repos/concentration.repo.js'
 import { startConcentration, checkConcentration, breakConcentration } from '../engine/magic/concentration.js';
 import type { Character } from '../schema/character.js';
 import { getPatternGenerator, PATTERN_DESCRIPTIONS } from './terrain-patterns.js';
+import { CREATURE_PRESETS } from '../data/creature-presets.js';
 
 // Global combat state (in-memory for MVP)
 let pubsub: PubSub | null = null;
@@ -64,7 +65,11 @@ function buildStateJson(state: CombatState, encounterId: string) {
             position: p.position ?? null,
             size: p.size ?? 'medium',
             movementSpeed: p.movementSpeed ?? 30,
-            movementRemaining: p.movementRemaining ?? (p.movementSpeed ?? 30)
+            movementRemaining: p.movementRemaining ?? (p.movementSpeed ?? 30),
+            // Combat stats for frontend/auto-calc
+            ac: p.ac,
+            attackDamage: p.attackDamage,
+            attackBonus: p.attackBonus
         })),
         // HIGH-006: Lair action status
         isLairActionPending: state.turnOrder[state.currentTurnIndex] === 'LAIR',
@@ -560,6 +565,9 @@ Example:
         name: 'execute_combat_action',
         description: `Execute a combat action (attack, heal, move, cast_spell, etc.).
 
+IMPORTANT FOR AOE SPELLS: When casting AoE spells like Fireball, you MUST provide targetIds 
+(array of IDs) for all creatures in the area. Use calculate_aoe first to get affected creatures.
+
 Examples:
 {
   "action": "attack",
@@ -592,17 +600,19 @@ Examples:
   "action": "cast_spell",
   "actorId": "wizard-1",
   "spellName": "Fireball",
-  "targetId": "goblin-1",
+  "targetIds": ["goblin-1", "goblin-2", "goblin-3"],
   "slotLevel": 3
 }`,
         inputSchema: z.object({
             encounterId: z.string().describe('The ID of the encounter'),
             action: z.enum(['attack', 'heal', 'move', 'disengage', 'cast_spell']),
             actorId: z.string(),
-            targetId: z.string().optional().describe('Target ID for attack/heal/cast_spell actions'),
+            targetId: z.string().optional().describe('Target ID for single-target attack/heal/cast_spell actions'),
+            targetIds: z.array(z.string()).optional()
+                .describe('Array of target IDs for AoE spells (e.g., Fireball). Use calculate_aoe to get affected targets first.'),
             attackBonus: z.number().int().optional(),
             dc: z.number().int().optional(),
-            damage: z.number().int().optional(),
+            damage: z.union([z.number(), z.string()]).optional().describe('Damage amount (number) or dice expression (e.g., "1d6+2")'),
             damageType: z.string().optional()
                 .describe('HIGH-002: Damage type (e.g., "fire", "cold", "slashing") for resistance calculation'),
             amount: z.number().int().optional(),
@@ -1002,20 +1012,56 @@ export async function handleCreateEncounter(args: unknown, ctx: SessionContext) 
     const engine = new CombatEngine(parsed.seed, pubsub || undefined);
 
     // Convert participants to proper format (preserve isEnemy, position, and resistances)
-    const participants: CombatParticipant[] = parsed.participants.map(p => ({
-        id: p.id,
-        name: p.name,
-        initiativeBonus: p.initiativeBonus,
-        hp: p.hp,
-        maxHp: p.maxHp,
-        isEnemy: p.isEnemy,  // Will be auto-detected in startEncounter if undefined
-        conditions: [],
-        position: p.position,  // CRIT-003: Preserve spatial position
-        // HIGH-002: Preserve damage modifiers
-        resistances: p.resistances,
-        vulnerabilities: p.vulnerabilities,
-        immunities: p.immunities
-    } as CombatParticipant));
+    const participants: CombatParticipant[] = parsed.participants.map(p => {
+        // Auto-lookup monster stats from presets
+        // This allows correct AC and damage calculation even if LLM omits it
+        let extraStats: Partial<CombatParticipant> = {};
+        const lowerName = p.name.toLowerCase();
+        
+        // Try precise match (e.g. "goblin")
+        let presetKey = Object.keys(CREATURE_PRESETS).find(k => k === lowerName);
+        
+        // Try fuzzy match: start of string (e.g. "goblin warrior" -> "goblin")
+        if (!presetKey) {
+            // Sort keys by length descending to match aggressive first ("giant rat" before "giant")
+            const keys = Object.keys(CREATURE_PRESETS).sort((a, b) => b.length - a.length);
+            presetKey = keys.find(k => lowerName.startsWith(k));
+        }
+        
+        // Try removing numbers (e.g. "goblin 1" -> "goblin")
+        if (!presetKey) {
+            const baseName = lowerName.replace(/ \d+$/, '');
+            presetKey = Object.keys(CREATURE_PRESETS).find(k => k === baseName);
+        }
+
+        const preset = presetKey ? CREATURE_PRESETS[presetKey] : undefined;
+
+        if (preset) {
+            extraStats = {
+                ac: preset.ac,
+                attackDamage: preset.defaultAttack?.damage,
+                attackBonus: preset.defaultAttack?.toHit
+            };
+        }
+
+        const participant = {
+            id: p.id,
+            name: preset ? preset.name : p.name,
+            hp: p.hp,
+            maxHp: p.maxHp,
+            initiative: 0, // Will be rolled
+            initiativeBonus: p.initiativeBonus ?? 0,
+            isEnemy: p.isEnemy ?? true,
+            conditions: p.conditions || [],
+            position: p.position,
+            resistances: p.resistances,
+            vulnerabilities: p.vulnerabilities,
+            immunities: p.immunities,
+            ...extraStats
+        } as CombatParticipant;
+        
+        return participant;
+    });
 
     // Start encounter
     const state = engine.startEncounter(participants);
@@ -1144,9 +1190,47 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
     };
 
     if (parsed.action === 'attack') {
-        if (parsed.attackBonus === undefined || parsed.dc === undefined || parsed.damage === undefined) {
-            throw new Error('Attack action requires attackBonus, dc, and damage');
+        // Validation & Auto-Calculation
+        let attackBonus = parsed.attackBonus;
+        let dc = parsed.dc;
+        let damage: number | string | undefined = parsed.damage;
+
+        const currentState = engine.getState();
+        const actor = currentState?.participants.find(p => p.id === parsed.actorId);
+        const target = currentState?.participants.find(p => p.id === parsed.targetId);
+
+        // 1. Attack Bonus
+        if (attackBonus === undefined) {
+            if (actor?.attackBonus !== undefined) {
+                attackBonus = actor.attackBonus;
+            }
         }
+        if (attackBonus === undefined) {
+            throw new Error('Attack action requires attackBonus (could not be auto-calculated from actor stats)');
+        }
+
+        // 2. Target AC (DC)
+        if (dc === undefined || dc === 0) {
+            if (target?.ac !== undefined) {
+                dc = target.ac;
+            } else {
+                // Heuristic: 10 + dex mod (if available) or just 10
+                const dex = target?.abilityScores?.dexterity ?? 10;
+                const dexMod = Math.floor((dex - 10) / 2);
+                dc = 10 + dexMod;
+            }
+        }
+
+        // 3. Damage
+        if (damage === undefined || damage === 0) {
+            if (actor?.attackDamage) {
+                damage = actor.attackDamage;
+            }
+        }
+        if (!damage && damage !== 0) { // check strictly against undefined/null/empty string, allow 0 if explicitly intended? No, 0 damage usually means error.
+             throw new Error('Attack action requires damage (could not be auto-calculated from actor stats)');
+        }
+
         if (!parsed.targetId) {
             throw new Error('Attack action requires targetId');
         }
@@ -1158,12 +1242,13 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         }
 
         // Use the new detailed attack method with optional damageType for HIGH-002
+        // Use the new detailed attack method with optional damageType for HIGH-002
         result = engine.executeAttack(
             parsed.actorId,
             parsed.targetId,
-            parsed.attackBonus,
-            parsed.dc,
-            parsed.damage,
+            attackBonus!,
+            dc!,
+            damage!,
             parsed.damageType  // HIGH-002: Pass damage type for resistance calculation
         );
 
@@ -1404,10 +1489,11 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             throw new Error('cast_spell action requires spellName');
         }
 
-        // CRIT-006: Block raw damage parameter for spell casting
-        if (parsed.damage !== undefined) {
-            throw new Error('damage parameter not allowed for cast_spell - damage is calculated from spell');
-        }
+        // CRIT-006: Block raw damage parameter for spell casting (allow 0 since LLMs often send it)
+        // BUG FIX: Relaxed validation - LLMs often send damage by mistake, just ignore it instead of throwing
+        // if (parsed.damage !== undefined && parsed.damage !== 0) {
+        //    throw new Error('damage parameter not allowed for cast_spell - damage is calculated from spell');
+        // }
 
         const currentState = engine.getState();
         if (!currentState) {
@@ -1478,45 +1564,72 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         // However, I'll commit at end to be safe, or start? 
         // If I commit at end, and resolution crashes, action is saved? 
         // If logic throws, we don't save state. 
-        // So better to commit at end of block).
+        // So better to commit at end of block.
 
-        // Get target for damage/effects
-        let target = currentState.participants.find(p => p.id === parsed.targetId);
-        const targetHpBefore = target?.hp || 0;
-
-        // Resolve spell effects
+        // Resolve spell effects (damage calculation)
         const resolution = resolveSpell(spell, casterChar, effectiveSlotLevel, {
-            targetAC: target ? (target as any).ac || 10 : 10
+            targetAC: 10 // Default AC for spell resolution
         });
 
-        // Apply damage/healing to target
-        if (resolution.damage && resolution.damage > 0 && target) {
-            const damageType = resolution.damageType || 'force';
+        // Collect all targets (support both single targetId and multiple targetIds for AoE)
+        // Also handle comma-separated targetId strings since LLMs often format this way
+        const allTargetIds: string[] = [];
+        if (parsed.targetIds && parsed.targetIds.length > 0) {
+            allTargetIds.push(...parsed.targetIds);
+        } else if (parsed.targetId) {
+            // Parse comma-separated targetId string (e.g., "goblin-1,goblin-2,goblin-3")
+            if (parsed.targetId.includes(',')) {
+                allTargetIds.push(...parsed.targetId.split(',').map((id: string) => id.trim()));
+            } else {
+                allTargetIds.push(parsed.targetId);
+            }
+        }
 
-            // Use engine to apply damage (handles resistances/immunities)
-            engine.executeAttack(
-                parsed.actorId,
-                parsed.targetId!,
-                100, // Auto-hit for spell damage
-                0,   // DC doesn't matter
-                resolution.damage,
-                damageType
-            );
+        // Track results for each target
+        const damageResults: { id: string; name: string; hpBefore: number; hpAfter: number; defeated: boolean }[] = [];
+        const damageType = resolution.damageType || 'force';
 
-            target = currentState.participants.find(p => p.id === parsed.targetId);
+        // Apply damage/healing to ALL targets
+        if (resolution.damage && resolution.damage > 0 && allTargetIds.length > 0) {
+            const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+            const concentrationRepo = new ConcentrationRepository(db);
 
-            // Check concentration if target is concentrating
-            if (target) {
-                const db = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
-                const concentrationRepo = new ConcentrationRepository(db);
-                const targetChar = charRepo.findById(parsed.targetId!);
+            for (const tid of allTargetIds) {
+                const targetParticipant = currentState.participants.find(p => p.id === tid);
+                if (!targetParticipant) continue;
 
-                if (targetChar && concentrationRepo.isConcentrating(parsed.targetId!)) {
+                const hpBefore = targetParticipant.hp;
+
+                // Use engine to apply damage (handles resistances/immunities)
+                engine.executeAttack(
+                    parsed.actorId,
+                    tid,
+                    100, // Auto-hit for spell damage
+                    0,   // DC doesn't matter for auto-hit
+                    resolution.damage,
+                    damageType
+                );
+
+                // Refresh target from state after damage
+                const updatedTarget = currentState.participants.find(p => p.id === tid);
+                const hpAfter = updatedTarget?.hp ?? 0;
+                const defeated = hpAfter <= 0;
+
+                damageResults.push({
+                    id: tid,
+                    name: targetParticipant.name,
+                    hpBefore,
+                    hpAfter,
+                    defeated
+                });
+
+                // Check concentration if target is concentrating
+                const targetChar = charRepo.findById(tid);
+                if (targetChar && concentrationRepo.isConcentrating(tid)) {
                     const concentrationCheck = checkConcentration(targetChar, resolution.damage, concentrationRepo);
                     if (concentrationCheck.broken) {
-                        // Break concentration
                         breakConcentration(
-                            { characterId: parsed.targetId!, reason: 'damage', damageAmount: resolution.damage },
+                            { characterId: tid, reason: 'damage', damageAmount: resolution.damage },
                             concentrationRepo,
                             charRepo
                         );
@@ -1524,9 +1637,9 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
                 }
 
                 // D&D 5e Rule: Dropping to 0 HP automatically breaks concentration
-                if (target.hp <= 0 && concentrationRepo.isConcentrating(parsed.targetId!)) {
+                if (defeated && targetChar && concentrationRepo.isConcentrating(tid)) {
                     breakConcentration(
-                        { characterId: parsed.targetId!, reason: 'death' },
+                        { characterId: tid, reason: 'death' },
                         concentrationRepo,
                         charRepo
                     );
@@ -1534,9 +1647,13 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             }
         }
 
-        if (resolution.healing && resolution.healing > 0 && target) {
+        // Handle healing (single target only for now)
+        let primaryTarget = currentState.participants.find(p => p.id === parsed.targetId);
+        const targetHpBefore = primaryTarget?.hp || 0;
+        
+        if (resolution.healing && resolution.healing > 0 && primaryTarget) {
             engine.executeHeal(parsed.actorId, parsed.targetId!, resolution.healing);
-            target = currentState.participants.find(p => p.id === parsed.targetId);
+            primaryTarget = currentState.participants.find(p => p.id === parsed.targetId);
         }
 
         // Consume spell slot (if not cantrip)
@@ -1572,32 +1689,52 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
                 effectiveSlotLevel,
                 currentState?.round || 1,
                 maxDuration,
-                parsed.targetId ? [parsed.targetId] : undefined,
+                allTargetIds.length > 0 ? allTargetIds : undefined,
                 concentrationRepo,
                 charRepo
             );
         }
 
-        // Format output with SPELL tag for test parsing
-        output = formatSpellCastResult(actor.name, resolution, target, targetHpBefore);
+        // Format output - now includes all targets hit
+        if (damageResults.length > 1) {
+            // AoE spell output
+            output = `\n┌─────────────────────────────────────────┐\n`;
+            output += `│ ✨ ${spell.name.toUpperCase()} (AoE)\n`;
+            output += `└─────────────────────────────────────────┘\n\n`;
+            output += `${actor.name} casts ${spell.name}!\n\n`;
+            output += `💥 Damage: ${resolution.damage} ${damageType}\n\n`;
+            output += `📍 TARGETS HIT (${damageResults.length}):\n`;
+            for (const dr of damageResults) {
+                const defeatIcon = dr.defeated ? ' 💀 DEFEATED' : '';
+                output += `  • ${dr.name}: ${dr.hpBefore} → ${dr.hpAfter} HP${defeatIcon}\n`;
+            }
+        } else if (damageResults.length === 1) {
+            output = formatSpellCastResult(actor.name, resolution, primaryTarget, targetHpBefore);
+        } else {
+            output = `\n✨ ${actor.name} casts ${spell.name}!\n`;
+            if (resolution.healing && resolution.healing > 0) {
+                output += `💚 Healing: ${resolution.healing}\n`;
+            }
+        }
         output += `\n[SPELL: ${spell.name}, SLOT: ${effectiveSlotLevel > 0 ? effectiveSlotLevel : 'cantrip'}, DMG: ${resolution.damage || 0}, HEAL: ${resolution.healing || 0}]`;
 
         // Commit Action Economy
         engine.commitAction(parsed.actorId, actionType, effectiveSlotLevel);
 
-        // Create result
+        // Create result (report first target for compatibility)
+        const firstTargetResult = damageResults[0];
         result = {
             type: 'attack',
             success: resolution.success,
             actor: { id: actor.id, name: actor.name },
-            target: target ? {
-                id: target.id,
-                name: target.name,
-                hpBefore: targetHpBefore,
-                hpAfter: target.hp,
-                maxHp: target.maxHp
+            target: firstTargetResult ? {
+                id: firstTargetResult.id,
+                name: firstTargetResult.name,
+                hpBefore: firstTargetResult.hpBefore,
+                hpAfter: firstTargetResult.hpAfter,
+                maxHp: currentState.participants.find(p => p.id === firstTargetResult.id)?.maxHp || 0
             } : { id: 'none', name: 'none', hpBefore: 0, hpAfter: 0, maxHp: 0 },
-            defeated: target ? target.hp <= 0 : false,
+            defeated: firstTargetResult?.defeated || false,
             message: `${actor.name} cast ${spell.name}`,
             // CRIT-006: Include spell damage/healing in result for testing and frontend
             damage: resolution.damage,

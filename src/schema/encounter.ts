@@ -103,7 +103,11 @@ export const TokenSchema = z.object({
         intelligence: z.number(),
         wisdom: z.number(),
         charisma: z.number()
-    }).optional()
+    }).optional(),
+    // Combat Stats for Auto-Resolution
+    ac: z.number().optional().describe('Armor Class for auto-resolution'),
+    attackDamage: z.string().optional().describe('Default attack damage (e.g., "1d6+2")'),
+    attackBonus: z.number().optional().describe('Default attack bonus')
 });
 
 export type Token = z.infer<typeof TokenSchema>;
