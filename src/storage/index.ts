@@ -81,6 +81,12 @@ function resolveDbPath(path?: string): string {
         return dbPath;
     }
 
+    // CRIT-005: If the path is the default 'rpg.db', use APPDATA instead of CWD
+    // This ensures the database is always in a consistent location
+    if (dbPath === 'rpg.db') {
+        return join(getAppDataDir(), 'rpg.db');
+    }
+
     // Make relative paths absolute based on CWD
     return join(process.cwd(), dbPath);
 }

@@ -851,6 +851,34 @@ export async function handleSetupTacticalEncounter(args: unknown, ctx: SessionCo
     (encounterState as any).terrain = terrain;
     combatManager.create(namespacedId, engine);
 
+    // CRIT-005: Save encounter to database for persistence
+    const { encounterRepo } = ensureDb();
+    encounterRepo.create({
+        id: encounterId,
+        tokens: encounterState.participants.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            initiativeBonus: p.initiativeBonus,
+            initiative: p.initiative,
+            isEnemy: p.isEnemy,
+            hp: p.hp,
+            maxHp: p.maxHp,
+            conditions: p.conditions,
+            abilityScores: p.abilityScores,
+            position: p.position,
+            movementSpeed: p.movementSpeed ?? 30,
+            size: p.size ?? 'medium'
+        })),
+        round: encounterState.round,
+        active_token_id: encounterState.turnOrder[encounterState.currentTurnIndex],
+        status: 'active',
+        terrain: JSON.stringify(terrain),
+        props: JSON.stringify([]),
+        grid_bounds: JSON.stringify({ minX: 0, maxX: width, minY: 0, maxY: height }),
+        created_at: Date.now(),
+        updated_at: Date.now()
+    });
+
     // Generate ASCII map
     const width = parsed.gridSize?.width || 20;
     const height = parsed.gridSize?.height || 20;
