@@ -188,12 +188,20 @@ Download the pre-built binary for your platform from the [Releases](https://gith
 .\rpg-mcp-win.exe
 ```
 
-**macOS:**
+**macOS (Intel):**
 
 ```bash
 # Download rpg-mcp-macos
 chmod +x rpg-mcp-macos
 ./rpg-mcp-macos
+```
+
+**macOS (Apple Silicon - M1/M2/M3/M4):**
+
+```bash
+# Download rpg-mcp-macos-arm64
+chmod +x rpg-mcp-macos-arm64
+./rpg-mcp-macos-arm64
 ```
 
 **Linux:**
@@ -220,7 +228,7 @@ To build binaries yourself:
 
 ```bash
 npm run build:binaries
-# Output: dist-bundle/rpg-mcp-win.exe, rpg-mcp-macos, rpg-mcp-linux
+# Output: bin/rpg-mcp-win.exe, rpg-mcp-macos, rpg-mcp-macos-arm64, rpg-mcp-linux
 ```
 
 ### MCP Client Configuration

@@ -412,7 +412,7 @@ async function build() {
             "pkg": {
                 "scripts": [],
                 "assets": [],
-                "targets": ["node20-win-x64", "node20-macos-x64", "node20-linux-x64"],
+                "targets": ["node20-win-x64", "node20-macos-x64", "node20-macos-arm64", "node20-linux-x64"],
                 "outputPath": "../bin"
             }
         };
@@ -421,7 +421,7 @@ async function build() {
         
         // Run pkg
         console.log('📦 Creating executables with pkg...');
-        execSync('npx pkg dist-bundle/server.cjs --targets node20-win-x64,node20-macos-x64,node20-linux-x64 --output bin/rpg-mcp', {
+        execSync('npx pkg dist-bundle/server.cjs --targets node20-win-x64,node20-macos-x64,node20-macos-arm64,node20-linux-x64 --output bin/rpg-mcp', {
             stdio: 'inherit',
             cwd: process.cwd()
         });
@@ -435,10 +435,11 @@ async function build() {
         console.log('   ⚠️  NOT using local node_modules (compiled for different Node version)');
         console.log('');
         
-        const platforms = ['win32-x64', 'darwin-x64', 'linux-x64'];
+        const platforms = ['win32-x64', 'darwin-x64', 'darwin-arm64', 'linux-x64'];
         const platformSuffixes = {
             'win32-x64': 'win',
-            'darwin-x64': 'macos', 
+            'darwin-x64': 'macos',
+            'darwin-arm64': 'macos-arm64',
             'linux-x64': 'linux'
         };
         
@@ -482,17 +483,25 @@ async function build() {
         console.log('');
         console.log('📦 Deployment instructions:');
         console.log('');
-        console.log('   For Tauri (Windows):');
-        console.log('     copy bin\\rpg-mcp-win.exe src-tauri\\binaries\\rpg-mcp-server-x86_64-pc-windows-msvc.exe');
-        console.log('     copy bin\\better_sqlite3.node src-tauri\\binaries\\');
+        console.log('   IMPORTANT: Create ../src-tauri/binaries/ directory if it doesn\'t exist:');
+        console.log('     mkdir -p ../src-tauri/binaries  (macOS/Linux)');
+        console.log('     md ..\\src-tauri\\binaries  (Windows, if not exists)');
         console.log('');
-        console.log('   For Tauri (macOS):');
-        console.log('     cp bin/rpg-mcp-macos src-tauri/binaries/rpg-mcp-server-x86_64-apple-darwin');
-        console.log('     cp bin/better_sqlite3-macos.node src-tauri/binaries/better_sqlite3.node');
+        console.log('   For Tauri (Windows):');
+        console.log('     copy bin\\rpg-mcp-win.exe ..\\src-tauri\\binaries\\rpg-mcp-server-x86_64-pc-windows-msvc.exe');
+        console.log('     copy bin\\better_sqlite3.node ..\\src-tauri\\binaries\\');
+        console.log('');
+        console.log('   For Tauri (macOS Intel):');
+        console.log('     cp bin/rpg-mcp-macos ../src-tauri/binaries/rpg-mcp-server-x86_64-apple-darwin');
+        console.log('     cp bin/better_sqlite3-macos.node ../src-tauri/binaries/better_sqlite3.node');
+        console.log('');
+        console.log('   For Tauri (macOS Apple Silicon):');
+        console.log('     cp bin/rpg-mcp-macos-arm64 ../src-tauri/binaries/rpg-mcp-server-aarch64-apple-darwin');
+        console.log('     cp bin/better_sqlite3-macos-arm64.node ../src-tauri/binaries/better_sqlite3.node');
         console.log('');
         console.log('   For Tauri (Linux):');
-        console.log('     cp bin/rpg-mcp-linux src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu');
-        console.log('     cp bin/better_sqlite3-linux.node src-tauri/binaries/better_sqlite3.node');
+        console.log('     cp bin/rpg-mcp-linux ../src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu');
+        console.log('     cp bin/better_sqlite3-linux.node ../src-tauri/binaries/better_sqlite3.node');
         console.log('');
         
     } catch (error) {
