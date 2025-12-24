@@ -245,12 +245,20 @@ Download the pre-built binary for your platform from the [Releases](https://gith
 .\rpg-mcp-win.exe
 ```
 
-**macOS:**
+**macOS (Intel):**
 
 ```bash
 # Download rpg-mcp-macos
 chmod +x rpg-mcp-macos
 ./rpg-mcp-macos
+```
+
+**macOS (Apple Silicon - M1/M2/M3/M4):**
+
+```bash
+# Download rpg-mcp-macos-arm64
+chmod +x rpg-mcp-macos-arm64
+./rpg-mcp-macos-arm64
 ```
 
 **Linux:**
@@ -277,8 +285,36 @@ To build binaries yourself:
 
 ```bash
 npm run build:binaries
-# Output: dist-bundle/rpg-mcp-win.exe, rpg-mcp-macos, rpg-mcp-linux
+# Output: bin/rpg-mcp-win.exe, rpg-mcp-macos, rpg-mcp-macos-arm64, rpg-mcp-linux
+# Plus platform-specific better_sqlite3 native modules
 ```
+
+**For Quest Keeper AI Integration:**
+
+After building binaries, copy them to the Quest Keeper AI frontend project:
+
+```bash
+# Create binaries directory if it doesn't exist
+mkdir -p ../QuestKeeperAI-v2/src-tauri/binaries
+
+# Windows
+copy bin\rpg-mcp-win.exe ..\QuestKeeperAI-v2\src-tauri\binaries\rpg-mcp-server-x86_64-pc-windows-msvc.exe
+copy bin\better_sqlite3-win.node ..\QuestKeeperAI-v2\src-tauri\binaries\better_sqlite3.node
+
+# macOS Intel
+cp bin/rpg-mcp-macos ../QuestKeeperAI-v2/src-tauri/binaries/rpg-mcp-server-x86_64-apple-darwin
+cp bin/better_sqlite3-macos.node ../QuestKeeperAI-v2/src-tauri/binaries/better_sqlite3.node
+
+# macOS Apple Silicon (M1/M2/M3/M4)
+cp bin/rpg-mcp-macos-arm64 ../QuestKeeperAI-v2/src-tauri/binaries/rpg-mcp-server-aarch64-apple-darwin
+cp bin/better_sqlite3-macos-arm64.node ../QuestKeeperAI-v2/src-tauri/binaries/better_sqlite3.node
+
+# Linux
+cp bin/rpg-mcp-linux ../QuestKeeperAI-v2/src-tauri/binaries/rpg-mcp-server-x86_64-unknown-linux-gnu
+cp bin/better_sqlite3-linux.node ../QuestKeeperAI-v2/src-tauri/binaries/better_sqlite3.node
+```
+
+> **Note:** Adjust the path to match your Quest Keeper AI installation location.
 
 ### MCP Client Configuration
 
