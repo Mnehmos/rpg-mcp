@@ -3,20 +3,21 @@ import { z } from 'zod';
 import { PartyRepository } from '../storage/repos/party.repo.js';
 import { CharacterRepository } from '../storage/repos/character.repo.js';
 import { QuestRepository } from '../storage/repos/quest.repo.js';
-import { 
-    Party, 
-    PartyMember, 
-    MemberRoleSchema, 
+import {
+    Party,
+    PartyMember,
+    MemberRoleSchema,
     PartyStatusSchema,
-    PartyContext 
+    PartyContext
 } from '../schema/party.js';
 import { getDb } from '../storage/index.js';
 import { SessionContext } from './types.js';
+import { RichFormatter } from './utils/formatter.js';
 
 function ensureDb() {
-    const dbPath = process.env.NODE_ENV === 'test' 
-        ? ':memory:' 
-        : process.env.RPG_DATA_DIR 
+    const dbPath = process.env.NODE_ENV === 'test'
+        ? ':memory:'
+        : process.env.RPG_DATA_DIR
             ? `${process.env.RPG_DATA_DIR}/rpg.db`
             : 'rpg.db';
     const db = getDb(dbPath);
@@ -234,7 +235,7 @@ export async function handleCreateParty(args: unknown, _ctx: SessionContext) {
         for (let i = 0; i < parsed.initialMembers.length; i++) {
             const memberInput = parsed.initialMembers[i];
             const character = charRepo.findById(memberInput.characterId);
-            
+
             if (!character) {
                 continue; // Skip invalid character IDs
             }
@@ -263,20 +264,27 @@ export async function handleCreateParty(args: unknown, _ctx: SessionContext) {
         }
     }
 
+    let output = RichFormatter.header('Party Created', '⚔️');
+    output += RichFormatter.keyValue({
+        'ID': `\`${party.id}\``,
+        'Name': party.name,
+        'Status': party.status,
+    });
+    if (party.description) {
+        output += `\n${party.description}\n`;
+    }
+    if (addedMembers.length > 0) {
+        output += RichFormatter.section('Members');
+        const rows = addedMembers.map(m => [m.name, m.role]);
+        output += RichFormatter.table(['Name', 'Role'], rows);
+    }
+    output += RichFormatter.success('Party created!');
+    output += RichFormatter.embedJson({ party, members: addedMembers, memberCount: addedMembers.length, leaderId }, 'PARTY');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                party: {
-                    id: party.id,
-                    name: party.name,
-                    description: party.description,
-                    status: party.status,
-                },
-                members: addedMembers,
-                memberCount: addedMembers.length,
-                leaderId,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -293,10 +301,18 @@ export async function handleGetParty(args: unknown, _ctx: SessionContext) {
     // Touch the party to update last_played_at
     partyRepo.touchParty(parsed.partyId);
 
+    let output = RichFormatter.party(party as any);
+    if (party.members && party.members.length > 0) {
+        output += RichFormatter.section('Members');
+        const rows = party.members.map((m: any) => [m.character?.name || m.characterId, m.role, m.isActive ? '⭐' : '']);
+        output += RichFormatter.table(['Name', 'Role', 'Active'], rows);
+    }
+    output += RichFormatter.embedJson(party, 'PARTY');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(party, null, 2)
+            text: output
         }]
     };
 }
@@ -319,13 +335,20 @@ export async function handleListParties(args: unknown, _ctx: SessionContext) {
         };
     });
 
+    let output = RichFormatter.header('Parties', '⚔️');
+    if (partiesWithCounts.length === 0) {
+        output += RichFormatter.alert('No parties found.', 'info');
+    } else {
+        const rows = partiesWithCounts.map(p => [p.name, p.status, String(p.memberCount)]);
+        output += RichFormatter.table(['Name', 'Status', 'Members'], rows);
+        output += `\n*${partiesWithCounts.length} party(ies) total*\n`;
+    }
+    output += RichFormatter.embedJson({ parties: partiesWithCounts, count: partiesWithCounts.length }, 'PARTIES');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                parties: partiesWithCounts,
-                count: partiesWithCounts.length,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -341,10 +364,15 @@ export async function handleUpdateParty(args: unknown, _ctx: SessionContext) {
         throw new Error(`Party not found: ${partyId}`);
     }
 
+    let output = RichFormatter.header('Party Updated', '✏️');
+    output += RichFormatter.party(updated as any);
+    output += RichFormatter.success('Party updated successfully.');
+    output += RichFormatter.embedJson(updated, 'PARTY');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(updated, null, 2)
+            text: output
         }]
     };
 }
@@ -358,13 +386,14 @@ export async function handleDeleteParty(args: unknown, _ctx: SessionContext) {
         throw new Error(`Party not found: ${parsed.partyId}`);
     }
 
+    let output = RichFormatter.header('Party Deleted', '🗑️');
+    output += RichFormatter.keyValue({ 'ID': `\`${parsed.partyId}\`` });
+    output += RichFormatter.success('Party deleted. Members are now unassigned.');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: 'Party deleted',
-                id: parsed.partyId,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -412,18 +441,18 @@ export async function handleAddPartyMember(args: unknown, _ctx: SessionContext) 
     partyRepo.addMember(member);
     partyRepo.touchParty(parsed.partyId);
 
+    let output = RichFormatter.header('Member Added', '➕');
+    output += RichFormatter.keyValue({
+        'Character': character.name,
+        'Party': party.name,
+        'Role': member.role,
+    });
+    output += RichFormatter.success(`${character.name} joined the party!`);
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Added ${character.name} to ${party.name}`,
-                member: {
-                    characterId: character.id,
-                    name: character.name,
-                    role: member.role,
-                    position: member.position,
-                },
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -439,13 +468,16 @@ export async function handleRemovePartyMember(args: unknown, _ctx: SessionContex
         throw new Error(`Member not found in party`);
     }
 
+    let output = RichFormatter.header('Member Removed', '➖');
+    output += RichFormatter.keyValue({
+        'Character': character?.name || parsed.characterId,
+    });
+    output += RichFormatter.success('Member removed from party.');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Removed ${character?.name || parsed.characterId} from party`,
-                characterId: parsed.characterId,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -461,10 +493,15 @@ export async function handleUpdatePartyMember(args: unknown, _ctx: SessionContex
         throw new Error(`Member not found in party`);
     }
 
+    let output = RichFormatter.header('Member Updated', '✏️');
+    output += RichFormatter.keyValue((updated as any));
+    output += RichFormatter.success('Member updated successfully.');
+    output += RichFormatter.embedJson(updated, 'MEMBER');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(updated, null, 2)
+            text: output
         }]
     };
 }
@@ -483,13 +520,16 @@ export async function handleSetPartyLeader(args: unknown, _ctx: SessionContext) 
     partyRepo.setLeader(parsed.partyId, parsed.characterId);
     partyRepo.touchParty(parsed.partyId);
 
+    let output = RichFormatter.header('Leader Set', '👑');
+    output += RichFormatter.keyValue({
+        'New Leader': character?.name || parsed.characterId,
+    });
+    output += RichFormatter.success('Party leader updated!');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `${character?.name || parsed.characterId} is now the party leader`,
-                leaderId: parsed.characterId,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -508,13 +548,16 @@ export async function handleSetActiveCharacter(args: unknown, _ctx: SessionConte
     partyRepo.setActiveCharacter(parsed.partyId, parsed.characterId);
     partyRepo.touchParty(parsed.partyId);
 
+    let output = RichFormatter.header('Active Character Set', '⭐');
+    output += RichFormatter.keyValue({
+        'Active Character': character?.name || parsed.characterId,
+    });
+    output += RichFormatter.success('Active character updated!');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Active character set to ${character?.name || parsed.characterId}`,
-                activeCharacterId: parsed.characterId,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -528,17 +571,25 @@ export async function handleGetPartyMembers(args: unknown, _ctx: SessionContext)
         throw new Error(`Party not found: ${parsed.partyId}`);
     }
 
+    let output = RichFormatter.header(`${party.name} - Members`, '👥');
+    if (party.leader) {
+        output += RichFormatter.keyValue({ 'Leader': (party.leader as any).character?.name || 'Unknown' });
+    }
+    if (party.members && party.members.length > 0) {
+        const rows = party.members.map((m: any) => [
+            m.character?.name || m.characterId,
+            m.role,
+            m.isActive ? '⭐' : '',
+        ]);
+        output += RichFormatter.table(['Name', 'Role', 'Active'], rows);
+    }
+    output += `\n*${party.memberCount} member(s)*\n`;
+    output += RichFormatter.embedJson({ partyId: party.id, partyName: party.name, members: party.members }, 'MEMBERS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                partyId: party.id,
-                partyName: party.name,
-                members: party.members,
-                leader: party.leader,
-                activeCharacter: party.activeCharacter,
-                memberCount: party.memberCount,
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -566,7 +617,7 @@ export async function handleGetPartyContext(args: unknown, _ctx: SessionContext)
             role: m.role,
             hp: `${m.character.hp}/${m.character.maxHp}`,
             status: m.character.hp < m.character.maxHp * 0.25 ? 'critical' :
-                    m.character.hp < m.character.maxHp * 0.5 ? 'wounded' :
+                m.character.hp < m.character.maxHp * 0.5 ? 'wounded' :
                     m.character.hp < m.character.maxHp ? 'hurt' : 'healthy',
         })),
     };
@@ -588,7 +639,7 @@ export async function handleGetPartyContext(args: unknown, _ctx: SessionContext)
             hp: party.activeCharacter.character.hp,
             maxHp: party.activeCharacter.character.maxHp,
             level: party.activeCharacter.character.level,
-            conditions: party.activeCharacter.character.hp < party.activeCharacter.character.maxHp * 0.5 
+            conditions: party.activeCharacter.character.hp < party.activeCharacter.character.maxHp * 0.5
                 ? ['wounded'] : undefined,
         };
     }
@@ -612,10 +663,39 @@ export async function handleGetPartyContext(args: unknown, _ctx: SessionContext)
 
     partyRepo.touchParty(parsed.partyId);
 
+    let output = RichFormatter.header(`${context.party.name} - Context`, '📋');
+    output += RichFormatter.keyValue({
+        'Status': context.party.status,
+        'Location': context.party.location || 'Unknown',
+        'Formation': context.party.formation || 'Standard',
+    });
+    if (context.leader) {
+        output += RichFormatter.section('Leader');
+        output += RichFormatter.keyValue({
+            'Name': context.leader.name,
+            'HP': `${context.leader.hp}/${context.leader.maxHp}`,
+            'Level': context.leader.level,
+        });
+    }
+    if (context.members && context.members.length > 0) {
+        output += RichFormatter.section('Party Members');
+        const rows = context.members.map((m: any) => [m.name, m.role, m.hp, m.status]);
+        output += RichFormatter.table(['Name', 'Role', 'HP', 'Status'], rows);
+    }
+    if (context.activeQuest) {
+        output += RichFormatter.section('Active Quest');
+        output += RichFormatter.keyValue({
+            'Quest': context.activeQuest.name,
+            'Objective': context.activeQuest.currentObjective || '-',
+            'Progress': context.activeQuest.progress,
+        });
+    }
+    output += RichFormatter.embedJson(context, 'CONTEXT');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(context, null, 2)
+            text: output
         }]
     };
 }
@@ -627,13 +707,15 @@ export async function handleGetUnassignedCharacters(args: unknown, _ctx: Session
     const excludeTypes = parsed.excludeEnemies ? ['enemy'] : undefined;
     const characters = partyRepo.getUnassignedCharacters(excludeTypes);
 
+    let output = RichFormatter.header('Unassigned Characters', '👤');
+    output += RichFormatter.characterList(characters as any);
+    output += `\n*${characters.length} unassigned character(s)*\n`;
+    output += RichFormatter.embedJson({ characters, count: characters.length }, 'CHARACTERS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                characters,
-                count: characters.length,
-            }, null, 2)
+            text: output
         }]
     };
 }

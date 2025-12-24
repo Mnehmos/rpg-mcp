@@ -7,11 +7,12 @@ import { ItemRepository } from '../storage/repos/item.repo.js';
 import { QuestSchema } from '../schema/quest.js';
 import { getDb } from '../storage/index.js';
 import { SessionContext } from './types.js';
+import { RichFormatter } from './utils/formatter.js';
 
 function ensureDb() {
-    const dbPath = process.env.NODE_ENV === 'test' 
-        ? ':memory:' 
-        : process.env.RPG_DATA_DIR 
+    const dbPath = process.env.NODE_ENV === 'test'
+        ? ':memory:'
+        : process.env.RPG_DATA_DIR
             ? `${process.env.RPG_DATA_DIR}/rpg.db`
             : 'rpg.db';
     const db = getDb(dbPath);
@@ -90,7 +91,7 @@ export async function handleCreateQuest(args: unknown, _ctx: SessionContext) {
     const parsed = QuestTools.CREATE_QUEST.inputSchema.parse(args);
 
     const now = new Date().toISOString();
-    
+
     // Ensure all objectives have IDs
     const objectives = parsed.objectives.map(obj => ({
         ...obj,
@@ -109,10 +110,14 @@ export async function handleCreateQuest(args: unknown, _ctx: SessionContext) {
 
     questRepo.create(quest);
 
+    let output = RichFormatter.quest(quest as any);
+    output += RichFormatter.success('Quest created!');
+    output += RichFormatter.embedJson(quest, 'QUEST');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(quest, null, 2)
+            text: output
         }]
     };
 }
@@ -126,10 +131,13 @@ export async function handleGetQuest(args: unknown, _ctx: SessionContext) {
         throw new Error(`Quest ${parsed.questId} not found`);
     }
 
+    let output = RichFormatter.quest(quest as any);
+    output += RichFormatter.embedJson(quest, 'QUEST');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(quest, null, 2)
+            text: output
         }]
     };
 }
@@ -140,10 +148,20 @@ export async function handleListQuests(args: unknown, _ctx: SessionContext) {
 
     const quests = questRepo.findAll(parsed.worldId);
 
+    let output = RichFormatter.header('Quests', '📜');
+    if (quests.length === 0) {
+        output += RichFormatter.alert('No quests found.', 'info');
+    } else {
+        const rows = quests.map((q: any) => [q.name, q.status || 'active', String(q.objectives?.length || 0)]);
+        output += RichFormatter.table(['Name', 'Status', 'Objectives'], rows);
+        output += `\n*${quests.length} quest(s) total*\n`;
+    }
+    output += RichFormatter.embedJson({ quests, count: quests.length }, 'QUESTS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({ quests, count: quests.length }, null, 2)
+            text: output
         }]
     };
 }
@@ -187,13 +205,18 @@ export async function handleAssignQuest(args: unknown, _ctx: SessionContext) {
     log.activeQuests.push(parsed.questId);
     questRepo.updateLog(log);
 
+    let output = RichFormatter.header('Quest Assigned', '📜');
+    output += RichFormatter.keyValue({
+        'Quest': quest.name,
+        'Character': character.name,
+    });
+    output += RichFormatter.success(`${character.name} has accepted the quest!`);
+    output += RichFormatter.embedJson({ quest }, 'QUEST');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Assigned quest "${quest.name}" to ${character.name}`,
-                quest: quest
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -219,8 +242,8 @@ export async function handleUpdateObjective(args: unknown, _ctx: SessionContext)
 
     // Update progress
     const updatedQuest = questRepo.updateObjectiveProgress(
-        parsed.questId, 
-        parsed.objectiveId, 
+        parsed.questId,
+        parsed.objectiveId,
         parsed.progress
     );
 
@@ -229,24 +252,26 @@ export async function handleUpdateObjective(args: unknown, _ctx: SessionContext)
     }
 
     const objective = updatedQuest.objectives[objectiveIndex];
-    
+
     // Check if all objectives are now complete
     const allComplete = questRepo.areAllObjectivesComplete(parsed.questId);
+
+    let output = RichFormatter.header('Objective Progress', '✅');
+    output += RichFormatter.keyValue({
+        'Quest': updatedQuest.name,
+        'Objective': objective.description,
+        'Progress': `${objective.current}/${objective.required}`,
+        'Completed': objective.completed ? 'Yes' : 'No',
+    });
+    if (allComplete) {
+        output += RichFormatter.success('🎉 All objectives complete! Ready to turn in.');
+    }
+    output += RichFormatter.embedJson({ objective, questComplete: allComplete, quest: updatedQuest }, 'OBJECTIVE');
 
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Updated objective: ${objective.description}`,
-                objective: {
-                    id: objective.id,
-                    description: objective.description,
-                    progress: `${objective.current}/${objective.required}`,
-                    completed: objective.completed
-                },
-                questComplete: allComplete,
-                quest: updatedQuest
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -269,19 +294,21 @@ export async function handleCompleteObjective(args: unknown, _ctx: SessionContex
     const objective = updatedQuest.objectives[objectiveIndex];
     const allComplete = questRepo.areAllObjectivesComplete(parsed.questId);
 
+    let output = RichFormatter.header('Objective Completed', '☑️');
+    output += RichFormatter.keyValue({
+        'Quest': updatedQuest.name,
+        'Objective': objective.description,
+    });
+    output += RichFormatter.success('Objective marked as complete!');
+    if (allComplete) {
+        output += RichFormatter.alert('🎉 All objectives complete! Ready to turn in.', 'success');
+    }
+    output += RichFormatter.embedJson({ objective, questComplete: allComplete, quest: updatedQuest }, 'OBJECTIVE');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Completed objective: ${objective.description}`,
-                objective: {
-                    id: objective.id,
-                    description: objective.description,
-                    completed: true
-                },
-                questComplete: allComplete,
-                quest: updatedQuest
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -347,23 +374,27 @@ export async function handleCompleteQuest(args: unknown, _ctx: SessionContext) {
     // Update quest status
     questRepo.update(parsed.questId, { status: 'completed' });
 
+    let output = RichFormatter.header('Quest Completed!', '🎉');
+    output += RichFormatter.keyValue({
+        'Quest': quest.name,
+        'Character': character.name,
+    });
+    output += RichFormatter.section('Rewards');
+    output += RichFormatter.keyValue({
+        'XP': rewardsGranted.xp || 0,
+        'Gold': rewardsGranted.gold || 0,
+    });
+    if (rewardsGranted.items.length > 0) {
+        output += RichFormatter.subSection('Items');
+        output += RichFormatter.list(rewardsGranted.items);
+    }
+    output += RichFormatter.success('Congratulations!');
+    output += RichFormatter.embedJson({ quest, rewards: rewardsGranted }, 'COMPLETE');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Completed quest: "${quest.name}"!`,
-                character: character.name,
-                rewards: {
-                    xp: rewardsGranted.xp || 0,
-                    gold: rewardsGranted.gold || 0,
-                    items: rewardsGranted.items
-                },
-                quest: {
-                    id: quest.id,
-                    name: quest.name,
-                    status: 'completed'
-                }
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -407,15 +438,29 @@ export async function handleGetQuestLog(args: unknown, _ctx: SessionContext) {
         prerequisites: quest.prerequisites
     }));
 
+    let output = RichFormatter.header(`${character.name}'s Quest Log`, '📖');
+    output += RichFormatter.keyValue({ 'Summary': `${fullLog.summary.active} active, ${fullLog.summary.completed} completed, ${fullLog.summary.failed} failed` });
+
+    if (quests.length === 0) {
+        output += RichFormatter.alert('No quests in log.', 'info');
+    } else {
+        for (const quest of quests) {
+            const statusIcon = quest.status === 'completed' ? '✅' : quest.status === 'failed' ? '❌' : '📜';
+            output += `\n${statusIcon} **${quest.name}** (${quest.status})\n`;
+            if (quest.objectives && quest.objectives.length > 0) {
+                for (const obj of quest.objectives) {
+                    const check = obj.completed ? '☑️' : '☐';
+                    output += `  ${check} ${obj.description} (${obj.current}/${obj.required})\n`;
+                }
+            }
+        }
+    }
+    output += RichFormatter.embedJson({ characterId: parsed.characterId, characterName: character.name, quests, summary: fullLog.summary }, 'QUESTLOG');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                characterId: parsed.characterId,
-                characterName: character.name,
-                quests,
-                summary: fullLog.summary
-            }, null, 2)
+            text: output
         }]
     };
 }

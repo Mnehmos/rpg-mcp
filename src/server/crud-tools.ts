@@ -10,11 +10,12 @@ import { z } from 'zod';
 import { getDb, closeDb } from '../storage/index.js';
 import { SessionContext } from './types.js';
 import { provisionStartingEquipment } from '../services/starting-equipment.service.js';
+import { RichFormatter } from './utils/formatter.js';
 
 function ensureDb() {
-    const dbPath = process.env.NODE_ENV === 'test' 
-        ? ':memory:' 
-        : process.env.RPG_DATA_DIR 
+    const dbPath = process.env.NODE_ENV === 'test'
+        ? ':memory:'
+        : process.env.RPG_DATA_DIR
             ? `${process.env.RPG_DATA_DIR}/rpg.db`
             : 'rpg.db';
     const db = getDb(dbPath);
@@ -235,10 +236,20 @@ export async function handleCreateWorld(args: unknown, _ctx: SessionContext) {
 
     worldRepo.create(world);
 
+    let output = RichFormatter.header('World Created', '🌍');
+    output += RichFormatter.keyValue({
+        'ID': `\`${world.id}\``,
+        'Name': world.name,
+        'Seed': world.seed || '-',
+        'Dimensions': `${world.width || 100} x ${world.height || 100}`,
+    });
+    output += RichFormatter.success('World created successfully!');
+    output += RichFormatter.embedJson(world, 'WORLD');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(world, null, 2)
+            text: output
         }]
     };
 }
@@ -252,10 +263,13 @@ export async function handleGetWorld(args: unknown, _ctx: SessionContext) {
         throw new Error(`World not found: ${parsed.id}`);
     }
 
+    let output = RichFormatter.world(world as any);
+    output += RichFormatter.embedJson(world, 'WORLD');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(world, null, 2)
+            text: output
         }]
     };
 }
@@ -269,10 +283,21 @@ export async function handleUpdateWorldEnvironment(args: unknown, _ctx: SessionC
         throw new Error(`World not found: ${parsed.id}`);
     }
 
+    let output = RichFormatter.header('Environment Updated', '🌤️');
+    output += RichFormatter.keyValue({
+        'World ID': `\`${updated.id}\``,
+        'Name': updated.name,
+    });
+    if (updated.environment) {
+        output += RichFormatter.section('Environment');
+        output += RichFormatter.keyValue(updated.environment as Record<string, unknown>);
+    }
+    output += RichFormatter.embedJson(updated, 'WORLD');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(updated, null, 2)
+            text: output
         }]
     };
 }
@@ -283,13 +308,20 @@ export async function handleListWorlds(args: unknown, _ctx: SessionContext) {
 
     const worlds = worldRepo.findAll();
 
+    let output = RichFormatter.header('Worlds', '🌍');
+    if (worlds.length === 0) {
+        output += RichFormatter.alert('No worlds found.', 'info');
+    } else {
+        const rows = worlds.map((w: any) => [w.name, `\`${w.id}\``, w.seed || '-']);
+        output += RichFormatter.table(['Name', 'ID', 'Seed'], rows);
+        output += `\n*${worlds.length} world(s) total*\n`;
+    }
+    output += RichFormatter.embedJson({ worlds, count: worlds.length }, 'WORLDS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                worlds,
-                count: worlds.length
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -300,13 +332,14 @@ export async function handleDeleteWorld(args: unknown, _ctx: SessionContext) {
 
     worldRepo.delete(parsed.id);
 
+    let output = RichFormatter.header('World Deleted', '🗑️');
+    output += RichFormatter.keyValue({ 'ID': `\`${parsed.id}\`` });
+    output += RichFormatter.success('World deleted successfully.');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: 'World deleted',
-                id: parsed.id
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -330,9 +363,9 @@ export async function handleCreateCharacter(args: unknown, _ctx: SessionContext)
 
     // Provision starting equipment and spells if enabled
     let provisioningResult = null;
-    const shouldProvision = parsed.provisionEquipment !== false && 
-                           (parsed.characterType === 'pc' || parsed.characterType === undefined);
-    
+    const shouldProvision = parsed.provisionEquipment !== false &&
+        (parsed.characterType === 'pc' || parsed.characterType === undefined);
+
     if (shouldProvision) {
         provisioningResult = provisionStartingEquipment(
             db,
@@ -356,7 +389,7 @@ export async function handleCreateCharacter(args: unknown, _ctx: SessionContext)
         // Map 'class' to 'characterClass' for DB compatibility
         characterClass: className,
         // Merge provisioned spells with any explicitly provided
-        knownSpells: provisioningResult?.spellsGranted.length 
+        knownSpells: provisioningResult?.spellsGranted.length
             ? [...new Set([...parsed.knownSpells || [], ...provisioningResult.spellsGranted])]
             : parsed.knownSpells || [],
         cantripsKnown: provisioningResult?.cantripsGranted.length
@@ -382,10 +415,31 @@ export async function handleCreateCharacter(args: unknown, _ctx: SessionContext)
         };
     }
 
+    let output = RichFormatter.character(response as any);
+    if (provisioningResult) {
+        output += RichFormatter.section('Starting Equipment');
+        if (provisioningResult.itemsGranted.length > 0) {
+            output += RichFormatter.list(provisioningResult.itemsGranted);
+        } else {
+            output += '*None*\n';
+        }
+        if (provisioningResult.spellsGranted.length > 0) {
+            output += RichFormatter.subSection('Spells Granted');
+            output += RichFormatter.list(provisioningResult.spellsGranted);
+        }
+        if (provisioningResult.cantripsGranted.length > 0) {
+            output += RichFormatter.subSection('Cantrips Granted');
+            output += RichFormatter.list(provisioningResult.cantripsGranted);
+        }
+        output += `\n💰 **Starting Gold:** ${provisioningResult.startingGold}gp\n`;
+    }
+    output += RichFormatter.success('Character created!');
+    output += RichFormatter.embedJson(response, 'CHARACTER');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(response, null, 2)
+            text: output
         }]
     };
 }
@@ -399,10 +453,13 @@ export async function handleGetCharacter(args: unknown, _ctx: SessionContext) {
         throw new Error(`Character not found: ${parsed.id}`);
     }
 
+    let output = RichFormatter.character(character as any);
+    output += RichFormatter.embedJson(character, 'CHARACTER');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(character, null, 2)
+            text: output
         }]
     };
 }
@@ -413,7 +470,7 @@ export async function handleUpdateCharacter(args: unknown, _ctx: SessionContext)
 
     // Build update object with all provided fields
     const updateData: Record<string, unknown> = {};
-    
+
     if (parsed.name !== undefined) updateData.name = parsed.name;
     if (parsed.race !== undefined) updateData.race = parsed.race;
     if (parsed.class !== undefined) updateData.characterClass = parsed.class; // Map to DB field
@@ -423,7 +480,7 @@ export async function handleUpdateCharacter(args: unknown, _ctx: SessionContext)
     if (parsed.level !== undefined) updateData.level = parsed.level;
     if (parsed.characterType !== undefined) updateData.characterType = parsed.characterType;
     if (parsed.stats !== undefined) updateData.stats = parsed.stats;
-    
+
     // Spellcasting updates
     if (parsed.knownSpells !== undefined) updateData.knownSpells = parsed.knownSpells;
     if (parsed.preparedSpells !== undefined) updateData.preparedSpells = parsed.preparedSpells;
@@ -442,16 +499,16 @@ export async function handleUpdateCharacter(args: unknown, _ctx: SessionContext)
         if (!existing) {
             throw new Error(`Character not found: ${parsed.id}`);
         }
-        
-        let currentConditions: Array<{ name: string; duration?: number; source?: string }> = 
+
+        let currentConditions: Array<{ name: string; duration?: number; source?: string }> =
             (existing as any).conditions || [];
-        
+
         // Remove conditions by name
         if (parsed.removeConditions && parsed.removeConditions.length > 0) {
             const toRemove = new Set(parsed.removeConditions.map(n => n.toLowerCase()));
             currentConditions = currentConditions.filter(c => !toRemove.has(c.name.toLowerCase()));
         }
-        
+
         // Add new conditions
         if (parsed.addConditions && parsed.addConditions.length > 0) {
             for (const newCond of parsed.addConditions) {
@@ -467,7 +524,7 @@ export async function handleUpdateCharacter(args: unknown, _ctx: SessionContext)
                 }
             }
         }
-        
+
         updateData.conditions = currentConditions;
     }
 
@@ -477,10 +534,15 @@ export async function handleUpdateCharacter(args: unknown, _ctx: SessionContext)
         throw new Error(`Failed to update character: ${parsed.id}`);
     }
 
+    let output = RichFormatter.header('Character Updated', '✏️');
+    output += RichFormatter.character(updated as any);
+    output += RichFormatter.success('Character updated successfully.');
+    output += RichFormatter.embedJson(updated, 'CHARACTER');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(updated, null, 2)
+            text: output
         }]
     };
 }
@@ -493,13 +555,15 @@ export async function handleListCharacters(args: unknown, _ctx: SessionContext) 
         characterType: parsed.characterType,
     });
 
+    let output = RichFormatter.header('Characters', '👥');
+    output += RichFormatter.characterList(characters as any);
+    output += `\n*${characters.length} character(s) total*\n`;
+    output += RichFormatter.embedJson({ characters, count: characters.length }, 'CHARACTERS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                characters,
-                count: characters.length
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -511,13 +575,14 @@ export async function handleDeleteCharacter(args: unknown, _ctx: SessionContext)
     const stmt = db.prepare('DELETE FROM characters WHERE id = ?');
     stmt.run(parsed.id);
 
+    let output = RichFormatter.header('Character Deleted', '🗑️');
+    output += RichFormatter.keyValue({ 'ID': `\`${parsed.id}\`` });
+    output += RichFormatter.success('Character deleted successfully.');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: 'Character deleted',
-                id: parsed.id
-            }, null, 2)
+            text: output
         }]
     };
 }

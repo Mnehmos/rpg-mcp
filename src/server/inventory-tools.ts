@@ -6,11 +6,12 @@ import { CharacterRepository } from '../storage/repos/character.repo.js';
 import { ItemSchema, INVENTORY_LIMITS } from '../schema/inventory.js';
 import { getDb } from '../storage/index.js';
 import { SessionContext } from './types.js';
+import { RichFormatter } from './utils/formatter.js';
 
 function ensureDb() {
-    const dbPath = process.env.NODE_ENV === 'test' 
-        ? ':memory:' 
-        : process.env.RPG_DATA_DIR 
+    const dbPath = process.env.NODE_ENV === 'test'
+        ? ':memory:'
+        : process.env.RPG_DATA_DIR
             ? `${process.env.RPG_DATA_DIR}/rpg.db`
             : 'rpg.db';
     const db = getDb(dbPath);
@@ -154,10 +155,24 @@ export async function handleCreateItemTemplate(args: unknown, _ctx: SessionConte
 
     itemRepo.create(item);
 
+    let output = RichFormatter.header('Item Created', '📦');
+    output += RichFormatter.keyValue({
+        'ID': `\`${item.id}\``,
+        'Name': item.name,
+        'Type': item.type,
+        'Weight': `${item.weight} lbs`,
+        'Value': `${item.value} gp`,
+    });
+    if (item.description) {
+        output += `\n${item.description}\n`;
+    }
+    output += RichFormatter.success('Item template created!');
+    output += RichFormatter.embedJson(item, 'ITEM');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(item, null, 2)
+            text: output
         }]
     };
 }
@@ -232,10 +247,18 @@ export async function handleGiveItem(args: unknown, _ctx: SessionContext) {
 
     inventoryRepo.addItem(parsed.characterId, parsed.itemId, parsed.quantity);
 
+    let output = RichFormatter.header('Item Added', '➕');
+    output += RichFormatter.keyValue({
+        'Item': item.name,
+        'Quantity': parsed.quantity,
+        'Character': `\`${parsed.characterId}\``,
+    });
+    output += RichFormatter.success(`Added ${parsed.quantity}x ${item.name} to inventory.`);
+
     return {
         content: [{
             type: 'text' as const,
-            text: `Added ${parsed.quantity} of item ${parsed.itemId} to character ${parsed.characterId}`
+            text: output
         }]
     };
 }
@@ -250,10 +273,18 @@ export async function handleRemoveItem(args: unknown, _ctx: SessionContext) {
         throw new Error(`Failed to remove item. Character may not have enough quantity.`);
     }
 
+    let output = RichFormatter.header('Item Removed', '➖');
+    output += RichFormatter.keyValue({
+        'Item ID': `\`${parsed.itemId}\``,
+        'Quantity': parsed.quantity,
+        'Character': `\`${parsed.characterId}\``,
+    });
+    output += RichFormatter.success('Item removed from inventory.');
+
     return {
         content: [{
             type: 'text' as const,
-            text: `Removed ${parsed.quantity} of item ${parsed.itemId} from character ${parsed.characterId}`
+            text: output
         }]
     };
 }
@@ -290,7 +321,7 @@ export async function handleEquipItem(args: unknown, _ctx: SessionContext) {
             newAc = character.ac + props.acBonus;
             acMessage = ` AC increased by ${props.acBonus} (now ${newAc})`;
         }
-        
+
         // Armor: sets base AC (may include DEX bonus in calculation)
         if (props.baseAC && typeof props.baseAC === 'number' && parsed.slot === 'armor') {
             const dexMod = Math.floor((character.stats.dex - 10) / 2);
@@ -344,7 +375,7 @@ export async function handleUnequipItem(args: unknown, _ctx: SessionContext) {
             newAc = Math.max(10, character.ac - props.acBonus); // Minimum AC of 10
             acMessage = ` AC decreased by ${props.acBonus} (now ${newAc})`;
         }
-        
+
         // Armor: revert to base 10 + DEX
         if (props.baseAC && typeof props.baseAC === 'number' && slot === 'armor') {
             const dexMod = Math.floor((character.stats.dex - 10) / 2);
@@ -378,10 +409,20 @@ export async function handleGetInventory(args: unknown, _ctx: SessionContext) {
 
     const inventory = inventoryRepo.getInventory(parsed.characterId);
 
+    let output = RichFormatter.header('Inventory', '🎒');
+    output += RichFormatter.keyValue({ 'Character': `\`${parsed.characterId}\`` });
+    output += RichFormatter.inventory(inventory.items.map((i: any) => ({
+        name: i.itemId,
+        quantity: i.quantity,
+        equipped: i.equipped,
+        slot: i.slot,
+    })));
+    output += RichFormatter.embedJson(inventory, 'INVENTORY');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(inventory, null, 2)
+            text: output
         }]
     };
 }
@@ -396,10 +437,22 @@ export async function handleGetItem(args: unknown, _ctx: SessionContext) {
         throw new Error(`Item not found: ${parsed.itemId}`);
     }
 
+    let output = RichFormatter.header(item.name, '📦');
+    output += RichFormatter.keyValue({
+        'ID': `\`${item.id}\``,
+        'Type': item.type,
+        'Weight': `${item.weight} lbs`,
+        'Value': `${item.value} gp`,
+    });
+    if (item.description) {
+        output += `\n${item.description}\n`;
+    }
+    output += RichFormatter.embedJson({ item }, 'ITEM');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({ item }, null, 2)
+            text: output
         }]
     };
 }
@@ -415,10 +468,23 @@ export async function handleListItems(args: unknown, _ctx: SessionContext) {
         items = itemRepo.findAll();
     }
 
+    let output = RichFormatter.header('Items', '📦');
+    if (parsed.type) {
+        output += RichFormatter.keyValue({ 'Filter': parsed.type });
+    }
+    if (items.length === 0) {
+        output += RichFormatter.alert('No items found.', 'info');
+    } else {
+        const rows = items.map((i: any) => [i.name, i.type, `${i.weight}`, `${i.value} gp`]);
+        output += RichFormatter.table(['Name', 'Type', 'Weight', 'Value'], rows);
+        output += `\n*${items.length} item(s) total*\n`;
+    }
+    output += RichFormatter.embedJson({ items, count: items.length }, 'ITEMS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({ items, count: items.length }, null, 2)
+            text: output
         }]
     };
 }
@@ -429,10 +495,21 @@ export async function handleSearchItems(args: unknown, _ctx: SessionContext) {
 
     const items = itemRepo.search(parsed);
 
+    let output = RichFormatter.header('Search Results', '🔍');
+    output += RichFormatter.keyValue(parsed as Record<string, unknown>);
+    if (items.length === 0) {
+        output += RichFormatter.alert('No items matched the query.', 'info');
+    } else {
+        const rows = items.map((i: any) => [i.name, i.type, `${i.value} gp`]);
+        output += RichFormatter.table(['Name', 'Type', 'Value'], rows);
+        output += `\n*${items.length} result(s)*\n`;
+    }
+    output += RichFormatter.embedJson({ items, count: items.length, query: parsed }, 'SEARCH');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({ items, count: items.length, query: parsed }, null, 2)
+            text: output
         }]
     };
 }
@@ -448,10 +525,19 @@ export async function handleUpdateItem(args: unknown, _ctx: SessionContext) {
         throw new Error(`Item not found: ${itemId}`);
     }
 
+    let output = RichFormatter.header('Item Updated', '✏️');
+    output += RichFormatter.keyValue({
+        'ID': `\`${item.id}\``,
+        'Name': item.name,
+        'Type': item.type,
+    });
+    output += RichFormatter.success('Item updated successfully.');
+    output += RichFormatter.embedJson({ item }, 'ITEM');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({ item, message: 'Item updated successfully' }, null, 2)
+            text: output
         }]
     };
 }
@@ -467,10 +553,17 @@ export async function handleDeleteItem(args: unknown, _ctx: SessionContext) {
 
     itemRepo.delete(parsed.itemId);
 
+    let output = RichFormatter.header('Item Deleted', '🗑️');
+    output += RichFormatter.keyValue({
+        'Name': existing.name,
+        'ID': `\`${parsed.itemId}\``,
+    });
+    output += RichFormatter.success('Item deleted successfully.');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({ message: `Item "${existing.name}" deleted successfully`, itemId: parsed.itemId }, null, 2)
+            text: output
         }]
     };
 }
@@ -496,16 +589,19 @@ export async function handleTransferItem(args: unknown, _ctx: SessionContext) {
         throw new Error(`Transfer failed. Source may not have enough quantity or item is equipped.`);
     }
 
+    let output = RichFormatter.header('Item Transferred', '🔀');
+    output += RichFormatter.keyValue({
+        'Item': item.name,
+        'Quantity': parsed.quantity,
+        'From': `\`${parsed.fromCharacterId}\``,
+        'To': `\`${parsed.toCharacterId}\``,
+    });
+    output += RichFormatter.success('Transfer complete!');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Transferred ${parsed.quantity}x ${item.name}`,
-                from: parsed.fromCharacterId,
-                to: parsed.toCharacterId,
-                item: item.name,
-                quantity: parsed.quantity
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -541,20 +637,19 @@ export async function handleUseItem(args: unknown, _ctx: SessionContext) {
     // Extract effect from properties
     const effect = item.properties?.effect || item.properties?.effects || 'No defined effect';
 
+    let output = RichFormatter.header('Item Used', '✨');
+    output += RichFormatter.keyValue({
+        'Item': item.name,
+        'Target': parsed.targetId || parsed.characterId,
+    });
+    output += RichFormatter.section('Effect');
+    output += `${effect}\n`;
+    output += RichFormatter.success('Item consumed!');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                message: `Used ${item.name}`,
-                item: {
-                    id: item.id,
-                    name: item.name,
-                    description: item.description
-                },
-                effect,
-                target: parsed.targetId || parsed.characterId,
-                consumed: true
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -565,10 +660,24 @@ export async function handleGetInventoryDetailed(args: unknown, _ctx: SessionCon
 
     const inventory = inventoryRepo.getInventoryWithDetails(parsed.characterId);
 
+    let output = RichFormatter.header('Detailed Inventory', '🎒');
+    output += RichFormatter.keyValue({
+        'Character': `\`${parsed.characterId}\``,
+        'Total Weight': `${inventory.totalWeight}/${inventory.capacity} lbs`,
+        'Gold': (inventory as any).gold || 0,
+    });
+    output += RichFormatter.inventory(inventory.items.map((i: any) => ({
+        name: i.item?.name || i.itemId,
+        quantity: i.quantity,
+        equipped: i.equipped,
+        slot: i.slot,
+    })));
+    output += RichFormatter.embedJson(inventory, 'INVENTORY');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify(inventory, null, 2)
+            text: output
         }]
     };
 }

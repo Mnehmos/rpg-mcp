@@ -36,6 +36,7 @@ import { ProgressionTools, handleAddXp, handleGetLevelProgression, handleLevelUp
 import { SkillCheckTools, handleRollSkillCheck, handleRollAbilityCheck, handleRollSavingThrow } from './skill-check-tools.js';
 import { NarrativeTools, handleAddNarrativeNote, handleSearchNarrativeNotes, handleUpdateNarrativeNote, handleGetNarrativeNote, handleDeleteNarrativeNote, handleGetNarrativeContextNotes } from './narrative-tools.js';
 import { CompositeTools, handleSetupTacticalEncounter, handleSpawnEquippedCharacter, handleInitializeSession, handleSpawnPopulatedLocation, handleSpawnPresetEncounter, handleRestParty, handleLootEncounter, handleTravelToLocation, handleSpawnPresetLocation } from './composite-tools.js';
+import { TraceTools, handleTraceTools, handleTraceDependencies } from './trace-tools.js';
 
 // Helper to create metadata
 // deferLoading defaults to true (most tools should be deferred)
@@ -1473,6 +1474,22 @@ export function buildToolRegistry(): ToolRegistry {
         ['Location generation', 'Preset spawning', 'Room networks', 'POI creation'], false, 'medium', false),
       schema: CompositeTools.SPAWN_PRESET_LOCATION.inputSchema,
       handler: handleSpawnPresetLocation
+    },
+
+    // === TRACE/DIAGNOSTICS TOOLS ===
+    [TraceTools.TRACE_TOOLS.name]: {
+      metadata: meta(TraceTools.TRACE_TOOLS.name, TraceTools.TRACE_TOOLS.description, 'meta',
+        ['trace', 'diagnostics', 'health', 'check', 'tools', 'database', 'repository', 'audit'],
+        ['Tool health checking', 'Database verification', 'Repository validation'], true, 'medium', false),
+      schema: TraceTools.TRACE_TOOLS.inputSchema,
+      handler: handleTraceTools
+    },
+    [TraceTools.TRACE_DEPENDENCIES.name]: {
+      metadata: meta(TraceTools.TRACE_DEPENDENCIES.name, TraceTools.TRACE_DEPENDENCIES.description, 'meta',
+        ['trace', 'dependencies', 'tool', 'schema', 'tables', 'debug'],
+        ['Tool dependency tracing', 'Schema analysis', 'Live testing'], false, 'low', false),
+      schema: TraceTools.TRACE_DEPENDENCIES.inputSchema,
+      handler: handleTraceDependencies
     }
     // Note: search_tools and load_tool_schema are registered separately in index.ts with full handlers
   };

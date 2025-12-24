@@ -3,19 +3,65 @@
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)]()
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-746%20passing-brightgreen.svg)]()
-[![Tools](https://img.shields.io/badge/MCP%20tools-135-blue.svg)]()
+[![Tests](https://img.shields.io/badge/tests-800%2B%20passing-brightgreen.svg)]()
+[![Tools](https://img.shields.io/badge/MCP%20tools-145+-blue.svg)]()
 
-**A deterministic, schema-driven, multi-world simulation engine for embodied AI agents.**
-
-RPG-MCP is not a game—it's a **world kernel**. It provides the physics, constraints, persistence, and deterministic execution layer that allows LLM agents to inhabit a simulated reality with real bodies, real limits, and real consequences.
+**A rules-enforced RPG backend that turns any LLM into a game master who can't cheat.**
 
 ---
 
-## What's New (December 6, 2025)
+## What Is This? (Start Here)
 
-- **135 MCP Tools** - Complete RPG mechanics coverage (up from 122)
-- **746 Passing Tests** - Comprehensive test coverage (up from 659)
+**You are the player. The AI is the dungeon master.**
+
+You talk to an AI (Claude, GPT, etc.) in natural language. You say things like "I attack the goblin" or "I search the room for traps." The AI narrates what happens and describes the world.
+
+**The difference from pure AI storytelling:** This engine enforces the rules. When you attack, it actually rolls dice, checks armor class, calculates damage, and updates HP in a real database. The AI can't just decide you hit or miss—the math happens, and both you and the AI see the result.
+
+### What can you actually do?
+
+- **Explore procedurally generated worlds** with 28+ biome types
+- **Fight enemies** using D&D 5e-style combat (initiative, AC, damage rolls, death saves)
+- **Cast spells** with real slot tracking—if you're out of slots, you can't cast
+- **Manage inventory** with equipment slots, weight, and item properties
+- **Complete quests** with tracked objectives and rewards
+- **Interact with NPCs** who remember your conversations across sessions
+- **Everything persists**—close the game, come back tomorrow, your character is exactly where you left them
+
+### Who is this for?
+
+- **Solo RPG players** who want AI-driven adventures with mechanical integrity
+- **People frustrated with AI RPGs** that fall apart when you ask "wait, how much HP do I have?"
+- **Developers** building AI game integrations who need a reference implementation
+
+### How do I play?
+
+1. Install the MCP server (see Installation below)
+2. Connect it to Claude Desktop (or any MCP-compatible client)
+3. Tell the AI: "Let's start a new game. Create a character for me."
+4. Play naturally—the AI handles narration, the engine handles mechanics
+
+---
+
+## For Developers
+
+RPG-MCP is a **world kernel**—the physics, constraints, persistence, and deterministic execution layer that allows LLM agents to inhabit a simulated reality with real bodies, real limits, and real consequences.
+
+---
+
+## What's New (December 2025)
+
+### Latest Release
+- **145+ MCP Tools** - Complete RPG mechanics coverage with new composite tools
+- **800+ Passing Tests** - Comprehensive test coverage across all systems
+- **Composite Tools (TIER 1)** - Reduce token overhead by 80-95% for common workflows
+- **Preset Systems** - 1100+ creature presets, 50+ encounter presets, 30+ location presets
+- **Schema Shorthand (TIER 2)** - Token-efficient position/stats parsing
+- **Batch Repository Methods** - Optimized for world generation workflows
+- **Location Presets** - Tavern, dungeon, temple, market presets with full population
+- **Encounter Presets** - Level-scaled encounters (goblin ambush, undead crypt, dragon's lair)
+
+### Core Systems
 - **Full Spellcasting System** - 15+ SRD spells, class progression, slot tracking
 - **Theft & Fence System** - Heat decay, witness tracking, black market economy
 - **Corpse & Loot System** - Decay states, harvestable resources, loot tables
@@ -24,7 +70,7 @@ RPG-MCP is not a game—it's a **world kernel**. It provides the physics, constr
 - **Legendary Creatures** - Lair actions, legendary resistances, boss mechanics
 - **Death Saving Throws** - Full D&D 5e rules with stabilization
 - **Spatial Navigation** - Room networks, terrain-aware POI placement
-- **Expanded Party System** - World positioning, region queries
+- **Narrative Memory Layer** - Session notes, plot threads, NPC voices, foreshadowing
 - **Currency System** - Gold/silver/copper with auto-conversion
 
 ---
@@ -104,6 +150,7 @@ This engine implements the **Event-Driven Agentic AI Architecture**:
 - **Death saving throws** (D&D 5e rules)
 - **Damage resistance/vulnerability/immunity**
 - **Legendary creatures** with lair actions and legendary resistances
+- **Encounter presets** - Pre-balanced encounters by party level
 
 ### Magic System
 
@@ -149,23 +196,33 @@ This engine implements the **Event-Driven Agentic AI Architecture**:
 ```
 src/
 ├── schema/           # Zod schemas: entities, actions, world state, constraints
+│   └── base-schemas.ts  # Reusable field definitions for token efficiency
 ├── engine/
 │   ├── combat/       # Encounters, initiative, damage, death saves
 │   ├── spatial/      # Grid, collision, movement, opportunity attacks
 │   ├── worldgen/     # Procedural generation (28+ biomes)
 │   ├── magic/        # Spell database, validation, resolution
 │   └── strategy/     # Nation simulation (grand strategy mode)
+├── data/
+│   ├── creature-presets.ts   # 1100+ creature templates
+│   ├── encounter-presets.ts  # 50+ balanced encounters
+│   ├── location-presets.ts   # 30+ location templates
+│   └── items/               # PHB weapons, armor, magic items
 ├── storage/
 │   ├── migrations.ts # SQLite schema definitions
 │   └── repos/        # Repository pattern for persistence
 ├── server/           # MCP tool handlers
+│   ├── composite-tools.ts    # TIER 1: High-level workflow tools
 │   ├── combat-tools.ts
 │   ├── corpse-tools.ts
 │   ├── improvisation-tools.ts
 │   ├── inventory-tools.ts
 │   ├── npc-memory-tools.ts
+│   ├── narrative-tools.ts
 │   ├── theft-tools.ts
-│   └── ... (14 tool modules)
+│   └── ... (20+ tool modules)
+├── utils/
+│   └── schema-shorthand.ts   # TIER 2: Token-efficient parsing
 └── api/              # MCP server entry point
 
 tests/                # 746 tests mirroring src/ structure
@@ -221,7 +278,7 @@ git clone https://github.com/Mnehmos/rpg-mcp.git
 cd rpg-mcp
 npm install
 npm run build
-npm test  # 746 tests should pass
+npm test  # 800+ tests should pass
 ```
 
 To build binaries yourself:
@@ -253,8 +310,8 @@ To use with an MCP-compatible client (Claude Desktop, etc.), add to your client'
 {
   "mcpServers": {
     "rpg-mcp": {
-      "command": "npx",
-      "args": ["tsx", "path/to/rpg-mcp/src/server/index.js"]
+      "command": "node",
+      "args": [ "path/to/rpg-mcp/src/dist/index.js"]
     }
   }
 }
@@ -530,14 +587,17 @@ Fork worlds, run thousands of parallel scenarios, collect structured action/outc
 7. **Anti-hallucination by design**
    LLMs cannot cast spells they don't know or claim damage they didn't roll.
 
+8. **Token efficiency**
+   Composite tools and schema shorthand reduce LLM context overhead.
+
 ---
 
 ## Test Coverage
 
 ```bash
 npm test
-# 746 tests passing
-# 85 test files
+# 800+ tests passing
+# 90+ test files
 # Coverage across all major systems
 ```
 
@@ -550,6 +610,8 @@ Key test areas:
 - Corpse/loot system with decay states
 - NPC memory and relationship tracking
 - Improvisation system (stunts, effects, synthesis)
+- Composite tool workflows
+- Preset system expansion and validation
 
 ---
 
@@ -574,6 +636,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 - [x] Corpse and loot mechanics
 - [x] NPC memory and relationships
 - [x] Improvisation engine
+- [x] Composite tools (TIER 1)
+- [x] Preset systems (creatures, encounters, locations)
+- [x] Narrative memory layer
 - [ ] WebSocket real-time subscriptions
 - [ ] Dialogue tree system
 - [ ] Cover mechanics in combat
@@ -591,7 +656,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 ## Related
 
 - [Model Context Protocol Specification](https://modelcontextprotocol.io)
-- [Quest Keeper](https://github.com/Mnehmos/quest-keeper) — Browser-based AI dungeon master using this engine
+- [Quest Keeper AI](https://github.com/Mnehmos/QuestKeeperAI-v2) — Desktop AI dungeon master using this engine
 
 ---
 

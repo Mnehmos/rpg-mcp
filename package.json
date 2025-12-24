@@ -38,6 +38,9 @@
     "typescript": "^5.9.3",
     "vitest": "^1.6.1"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.23.0",
     "@types/uuid": "^10.0.0",

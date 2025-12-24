@@ -11,11 +11,12 @@ import { CharacterTypeSchema } from '../schema/party.js';
 import { z } from 'zod';
 import { getDb } from '../storage/index.js';
 import { SessionContext } from './types.js';
+import { RichFormatter } from './utils/formatter.js';
 
 function ensureDb() {
-    const dbPath = process.env.NODE_ENV === 'test' 
-        ? ':memory:' 
-        : process.env.RPG_DATA_DIR 
+    const dbPath = process.env.NODE_ENV === 'test'
+        ? ':memory:'
+        : process.env.RPG_DATA_DIR
             ? `${process.env.RPG_DATA_DIR}/rpg.db`
             : 'rpg.db';
     const db = getDb(dbPath);
@@ -141,7 +142,7 @@ export async function handleBatchCreateCharacters(args: unknown, _ctx: SessionCo
     const { charRepo } = ensureDb();
     const parsed = BatchTools.BATCH_CREATE_CHARACTERS.inputSchema.parse(args);
     const now = new Date().toISOString();
-    
+
     const createdCharacters: any[] = [];
     const errors: string[] = [];
 
@@ -178,15 +179,19 @@ export async function handleBatchCreateCharacters(args: unknown, _ctx: SessionCo
         }
     }
 
+    let output = RichFormatter.header('Batch Characters Created', '👥');
+    output += RichFormatter.characterList(createdCharacters as any);
+    output += `\n*${createdCharacters.length} character(s) created*\n`;
+    if (errors.length > 0) {
+        output += RichFormatter.section('Errors');
+        output += RichFormatter.list(errors);
+    }
+    output += RichFormatter.embedJson({ success: errors.length === 0, created: createdCharacters, createdCount: createdCharacters.length, errors: errors.length > 0 ? errors : undefined }, 'BATCH');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                success: errors.length === 0,
-                created: createdCharacters,
-                createdCount: createdCharacters.length,
-                errors: errors.length > 0 ? errors : undefined
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -195,7 +200,7 @@ export async function handleBatchCreateNpcs(args: unknown, _ctx: SessionContext)
     const { charRepo } = ensureDb();
     const parsed = BatchTools.BATCH_CREATE_NPCS.inputSchema.parse(args);
     const now = new Date().toISOString();
-    
+
     const createdNpcs: any[] = [];
     const errors: string[] = [];
 
@@ -233,16 +238,23 @@ export async function handleBatchCreateNpcs(args: unknown, _ctx: SessionContext)
         }
     }
 
+    let output = RichFormatter.header('NPCs Created', '🧑');
+    if (parsed.locationName) {
+        output += RichFormatter.keyValue({ 'Location': parsed.locationName });
+    }
+    const rows = createdNpcs.map(n => [n.name, n.role, n.race]);
+    output += RichFormatter.table(['Name', 'Role', 'Race'], rows);
+    output += `\n*${createdNpcs.length} NPC(s) created*\n`;
+    if (errors.length > 0) {
+        output += RichFormatter.section('Errors');
+        output += RichFormatter.list(errors);
+    }
+    output += RichFormatter.embedJson({ success: errors.length === 0, locationName: parsed.locationName, created: createdNpcs, createdCount: createdNpcs.length }, 'NPCS');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                success: errors.length === 0,
-                locationName: parsed.locationName,
-                created: createdNpcs,
-                createdCount: createdNpcs.length,
-                errors: errors.length > 0 ? errors : undefined
-            }, null, 2)
+            text: output
         }]
     };
 }
@@ -250,7 +262,7 @@ export async function handleBatchCreateNpcs(args: unknown, _ctx: SessionContext)
 export async function handleBatchDistributeItems(args: unknown, _ctx: SessionContext) {
     const { db } = ensureDb();
     const parsed = BatchTools.BATCH_DISTRIBUTE_ITEMS.inputSchema.parse(args);
-    
+
     const distributions: any[] = [];
     const errors: string[] = [];
 
@@ -259,7 +271,7 @@ export async function handleBatchDistributeItems(args: unknown, _ctx: SessionCon
             // Get current character
             const charStmt = db.prepare('SELECT * FROM characters WHERE id = ?');
             const character = charStmt.get(dist.characterId) as any;
-            
+
             if (!character) {
                 errors.push(`Character not found: ${dist.characterId}`);
                 continue;
@@ -270,7 +282,7 @@ export async function handleBatchDistributeItems(args: unknown, _ctx: SessionCon
             if (character.inventory) {
                 try {
                     inventory = JSON.parse(character.inventory);
-                } catch { 
+                } catch {
                     inventory = [];
                 }
             }
@@ -293,15 +305,22 @@ export async function handleBatchDistributeItems(args: unknown, _ctx: SessionCon
         }
     }
 
+    const totalItems = distributions.reduce((sum, d) => sum + d.itemsGiven.length, 0);
+    let output = RichFormatter.header('Items Distributed', '🎁');
+    output += RichFormatter.keyValue({ 'Total Items': totalItems, 'Recipients': distributions.length });
+    for (const dist of distributions) {
+        output += `\n**${dist.characterName}**: ${dist.itemsGiven.join(', ')}\n`;
+    }
+    if (errors.length > 0) {
+        output += RichFormatter.section('Errors');
+        output += RichFormatter.list(errors);
+    }
+    output += RichFormatter.embedJson({ success: errors.length === 0, distributions, totalItemsDistributed: totalItems }, 'DIST');
+
     return {
         content: [{
             type: 'text' as const,
-            text: JSON.stringify({
-                success: errors.length === 0,
-                distributions,
-                totalItemsDistributed: distributions.reduce((sum, d) => sum + d.itemsGiven.length, 0),
-                errors: errors.length > 0 ? errors : undefined
-            }, null, 2)
+            text: output
         }]
     };
 }
