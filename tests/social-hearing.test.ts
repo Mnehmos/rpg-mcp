@@ -7,7 +7,6 @@
  * - Conversation memory recording for listeners
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { CharacterRepository } from '../src/storage/repos/character.repo.js';

@@ -1,5 +1,4 @@
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { handleCreateEncounter, handleExecuteCombatAction } from '../../src/server/combat-tools.js';
 import { getCombatManager } from '../../src/server/state/combat-manager.js';
 

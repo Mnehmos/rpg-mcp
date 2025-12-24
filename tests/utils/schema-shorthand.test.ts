@@ -2,7 +2,6 @@
  * Tests for schema shorthand utilities
  * TIER 2: Token efficiency through input shorthand
  */
-import { describe, it, expect } from 'vitest';
 import {
     // Position
     parsePosition,

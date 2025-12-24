@@ -1,4 +1,3 @@
-import { describe, it, expect, test } from 'vitest';
 
 test('simple math', () => {
   expect(2 + 2).toBe(4);

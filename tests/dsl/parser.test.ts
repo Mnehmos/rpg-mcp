@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { parseDSL } from '../../src/engine/dsl/parser';
 import { CommandType } from '../../src/engine/dsl/schema';
 import { StructureType } from '../../src/schema/structure';

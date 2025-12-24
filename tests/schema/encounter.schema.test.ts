@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { EncounterSchema, TokenSchema } from '../../src/schema/encounter';
 import { FIXED_TIMESTAMP } from '../fixtures';
 

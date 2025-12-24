@@ -9,7 +9,6 @@
  * - Phase 5: AoE Integration
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import {
     // Phase 2: Boundary Validation
     isPositionInBounds,

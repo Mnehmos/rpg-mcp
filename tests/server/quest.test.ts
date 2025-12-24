@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleCreateQuest, handleAssignQuest, handleUpdateObjective, handleCompleteQuest, handleGetQuestLog } from '../../src/server/quest-tools';
 import { handleCreateWorld } from '../../src/server/crud-tools';
 import { handleCreateCharacter } from '../../src/server/crud-tools';

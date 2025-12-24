@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleDiceRoll, handleProbabilityCalculate, handleAlgebraSolve, handleAlgebraSimplify, handlePhysicsProjectile } from '../../src/server/math-tools';
 import { CalculationRepository } from '../../src/storage/repos/calculation.repo';
 import { getDb, closeDb } from '../../src/storage';

@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { NationSchema } from '../../src/schema/nation.js';
 
 describe('NationSchema', () => {

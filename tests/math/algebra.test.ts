@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { AlgebraEngine } from '../../src/math/algebra';
 
 describe('AlgebraEngine', () => {

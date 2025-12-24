@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { DiplomaticRelationSchema, TerritorialClaimSchema, NationEventSchema } from '../../src/schema/diplomacy.js';
 
 describe('Diplomacy Schemas', () => {

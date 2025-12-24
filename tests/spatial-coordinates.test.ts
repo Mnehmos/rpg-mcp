@@ -6,7 +6,6 @@
  * and have travel metadata for navigation.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { closeDb, getDb } from '../src/storage/index.js';

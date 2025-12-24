@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { BiomeSchema } from '../../src/schema/biome';
 
 describe('BiomeSchema', () => {

@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { RegionSchema } from '../../src/schema/region';
 import { FIXED_TIMESTAMP } from '../fixtures';
 

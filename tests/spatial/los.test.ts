@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { SpatialEngine, Point } from '../../src/engine/spatial/engine';
 
 describe('SpatialEngine - Line of Sight', () => {

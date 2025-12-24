@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { PhysicsEngine } from '../../src/math/physics';
 
 describe('PhysicsEngine', () => {

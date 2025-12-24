@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { handleCreateEncounter, clearCombatState } from '../../src/server/combat-tools';
 import { handleCreateWorld, handleDeleteWorld, getTestDb, closeTestDb } from '../../src/server/crud-tools';
 

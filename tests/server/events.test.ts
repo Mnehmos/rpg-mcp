@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { PubSub } from '../../src/engine/pubsub';
 import { registerEventTools } from '../../src/server/events';

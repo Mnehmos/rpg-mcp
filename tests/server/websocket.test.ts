@@ -1,4 +1,3 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { WebSocket } from 'ws';
 import { WebSocketServerTransport } from '../../src/server/transport/websocket';
 import { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';

@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { applyPatch } from '../../src/engine/dsl/engine';
 import { CommandType } from '../../src/engine/dsl/schema';
 import { StructureType } from '../../src/schema/structure';

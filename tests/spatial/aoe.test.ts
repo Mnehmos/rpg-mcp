@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { SpatialEngine } from '../../src/engine/spatial/engine';
 
 describe('SpatialEngine - Area of Effect', () => {

@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { handleGenerateWorld, clearWorld } from '../../src/server/tools';
 
 describe('Server Tools', () => {

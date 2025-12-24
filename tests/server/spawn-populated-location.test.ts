@@ -1,7 +1,6 @@
 /**
  * Tests for spawn_populated_location composite tool
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import { initDB } from '../../src/storage/db.js';
 import { migrate } from '../../src/storage/migrations.js';

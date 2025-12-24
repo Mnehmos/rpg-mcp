@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { closeDb, getDb } from '../../src/storage/index.js';
 import { SpatialRepository } from '../../src/storage/repos/spatial.repo.js';
 import { CharacterRepository } from '../../src/storage/repos/character.repo.js';

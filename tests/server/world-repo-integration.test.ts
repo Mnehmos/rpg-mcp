@@ -1,4 +1,3 @@
-import { describe, it, expect, afterEach } from 'vitest';
 import { handleGenerateWorld, clearWorld } from '../../src/server/tools';
 import { handleListWorlds, handleDeleteWorld, closeTestDb } from '../../src/server/crud-tools';
 

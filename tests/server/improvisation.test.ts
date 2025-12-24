@@ -10,7 +10,6 @@
  * Run: npm test -- tests/server/improvisation.test.ts
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
 import { migrate } from '../../src/storage/migrations.js';

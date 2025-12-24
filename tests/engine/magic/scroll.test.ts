@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import { CharacterRepository } from '../../../src/storage/repos/character.repo.js';

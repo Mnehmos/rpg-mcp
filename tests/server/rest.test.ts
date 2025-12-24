@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCreateCharacter, handleGetCharacter } from '../../src/server/crud-tools.js';
 import { handleTakeLongRest, handleTakeShortRest } from '../../src/server/rest-tools.js';
 import { closeDb, getDb } from '../../src/storage/index.js';

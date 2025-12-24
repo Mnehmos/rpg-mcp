@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ReplayEngine } from '../../src/engine/replay';
 import { AuditRepository } from '../../src/storage/audit.repo';
 import { getDb, closeDb } from '../../src/storage';

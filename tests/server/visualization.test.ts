@@ -3,7 +3,6 @@
  * Tests for render_map and calculate_aoe tools
  */
 
-import { describe, expect, it, beforeEach } from 'vitest';
 import { CombatEngine, CombatState, CombatParticipant } from '../../src/engine/combat/engine.js';
 import { SpatialEngine } from '../../src/engine/spatial/engine.js';
 

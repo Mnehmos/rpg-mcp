@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { CharacterSchema, NPCSchema } from '../../src/schema/character';
 import { FIXED_TIMESTAMP } from '../fixtures';
 

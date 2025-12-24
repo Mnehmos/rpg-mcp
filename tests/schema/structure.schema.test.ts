@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { StructureSchema } from '../../src/schema/structure';
 import { FIXED_TIMESTAMP } from '../fixtures';
 

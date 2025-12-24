@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { generateRegions, RegionGenerationOptions } from '../../src/engine/worldgen/regions';
 import { BiomeType } from '../../src/schema/biome';
 

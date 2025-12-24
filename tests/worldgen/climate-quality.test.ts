@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { generateHeightmap } from '../../src/engine/worldgen/heightmap';
 import { generateClimateMap, ClimateMap } from '../../src/engine/worldgen/climate';
 

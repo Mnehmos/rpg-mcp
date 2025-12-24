@@ -1,4 +1,3 @@
-import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { ToolRegistry } from '../../src/api/registry';
 

@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { TileSchema } from '../../src/schema/tile';
 
 describe('TileSchema', () => {

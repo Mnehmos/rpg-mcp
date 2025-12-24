@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { generateWorld } from '../../src/engine/worldgen/index';
 
 describe('World Generation Determinism', () => {

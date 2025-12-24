@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { handleCreateEncounter, handleExecuteCombatAction, handleAdvanceTurn, clearCombatState } from '../../src/server/combat-tools.js';
 import { closeDb, getDb } from '../../src/storage/index.js';
 

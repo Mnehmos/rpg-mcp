@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { placeStructures, StructureGenerationOptions } from '../../src/engine/worldgen/structures';
 import { BiomeType } from '../../src/schema/biome';
 import { StructureType } from '../../src/schema/structure';

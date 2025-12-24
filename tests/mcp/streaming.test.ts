@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';

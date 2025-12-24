@@ -10,7 +10,6 @@
  * - River validity (downhill flow, no loops, proper branching)
  */
 
-import { describe, it, expect } from 'vitest';
 import { generateWorld } from '../../src/engine/worldgen/index';
 import { BiomeType } from '../../src/schema/biome';
 

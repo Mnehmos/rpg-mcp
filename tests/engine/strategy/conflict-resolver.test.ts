@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { ConflictResolver } from '../../../src/engine/strategy/conflict-resolver.js';
 
 describe('ConflictResolver', () => {

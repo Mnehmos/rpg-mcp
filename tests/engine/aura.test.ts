@@ -3,7 +3,6 @@
  * Covers aura creation, radius checks, target filtering, effect application, and integration
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb } from '../../src/storage/index.js';
 import { AuraRepository } from '../../src/storage/repos/aura.repo.js';
 import { CharacterRepository } from '../../src/storage/repos/character.repo.js';

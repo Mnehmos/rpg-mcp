@@ -10,7 +10,6 @@
  * Run: npm test -- tests/server/expanded-features.test.ts
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { v4 as uuid } from 'uuid';
 import Database from 'better-sqlite3';
 import { migrate } from '../../src/storage/migrations.js';

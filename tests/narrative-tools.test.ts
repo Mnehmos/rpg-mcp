@@ -7,7 +7,6 @@
  * - Context retrieval for LLM injection
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { getDb, closeDb, migrate } from '../src/storage/index';
 

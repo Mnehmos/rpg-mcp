@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleCreateItemTemplate, handleGiveItem, handleRemoveItem, handleEquipItem, handleUnequipItem, handleGetInventory } from '../../src/server/inventory-tools';
 import { handleCreateCharacter } from '../../src/server/crud-tools';
 import { closeTestDb } from '../../src/server/crud-tools';

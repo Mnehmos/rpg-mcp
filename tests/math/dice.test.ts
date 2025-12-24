@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { DiceEngine } from '../../src/math/dice';
 
 describe('DiceEngine', () => {

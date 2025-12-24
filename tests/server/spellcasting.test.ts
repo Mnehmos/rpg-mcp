@@ -8,7 +8,6 @@
  * Expand dynamically as edge cases emerge during implementation.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { v4 as uuid } from 'uuid';
 
 // Core imports

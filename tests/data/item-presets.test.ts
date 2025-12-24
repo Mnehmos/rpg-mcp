@@ -1,7 +1,6 @@
 /**
  * Tests for the modular item preset system
  */
-import { describe, it, expect } from 'vitest';
 import {
     getItemPreset,
     getWeaponPreset,

@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { ProbabilityEngine } from '../../src/math/probability';
 
 describe('ProbabilityEngine', () => {

@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { AuditLogger } from '../../src/server/audit';
 import { AuditRepository } from '../../src/storage/audit.repo';
 import { getDb } from '../../src/storage';

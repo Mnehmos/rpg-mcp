@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FogOfWar } from '../../../src/engine/strategy/fog-of-war.js';
 
 describe('FogOfWar', () => {

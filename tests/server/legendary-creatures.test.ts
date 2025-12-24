@@ -10,7 +10,6 @@
  * @see https://www.dndbeyond.com/sources/basic-rules/monsters#LegendaryCreatures
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { CombatEngine, CombatParticipant } from '../../src/engine/combat/engine.js';
 
 describe('Legendary Creatures', () => {

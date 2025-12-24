@@ -1,4 +1,3 @@
-import { describe, it, expect, vi } from 'vitest';
 import { PubSub } from '../../src/engine/pubsub';
 
 describe('PubSub System', () => {

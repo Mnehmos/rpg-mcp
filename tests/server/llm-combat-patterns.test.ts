@@ -8,7 +8,6 @@
  * even when they don't follow the optimal format.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { v4 as uuid } from 'uuid';
 
 // Core imports

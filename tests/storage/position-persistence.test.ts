@@ -8,7 +8,6 @@
  * "Positions not persisted - In-memory only, not serialized to database"
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import { initDB } from '../../src/storage/db.js';
 import { migrate } from '../../src/storage/migrations.js';

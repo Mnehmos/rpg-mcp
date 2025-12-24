@@ -1,7 +1,6 @@
 /**
  * Tests for creature preset system
  */
-import { describe, it, expect } from 'vitest';
 import {
     getCreaturePreset,
     expandCreatureTemplate,
