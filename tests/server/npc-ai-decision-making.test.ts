@@ -1127,6 +1127,7 @@ describe('Category 4: Adaptive AI Behavior', () => {
             const stateResult2 = await handleGetEncounterState({
                 encounterId: extractJsonFromResponse(encounter2.content[0].text).encounterId
             }, mockCtx);
+            const state2 = extractStateJson(stateResult2.content[0].text);
 
             expect(state2.participants).toBeDefined();
         });

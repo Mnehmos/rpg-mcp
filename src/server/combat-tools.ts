@@ -1514,10 +1514,10 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
         }
 
         // CRIT-006: Block raw damage parameter for spell casting (allow 0 since LLMs often send it)
-        // BUG FIX: Relaxed validation - LLMs often send damage by mistake, just ignore it instead of throwing
-        // if (parsed.damage !== undefined && parsed.damage !== 0) {
-        //    throw new Error('damage parameter not allowed for cast_spell - damage is calculated from spell');
-        // }
+        // SECURITY: Prevent hallucination attacks where LLM specifies arbitrary damage values
+        if (parsed.damage !== undefined && parsed.damage !== 0) {
+            throw new Error('damage parameter not allowed for cast_spell - damage is calculated from spell');
+        }
 
         const currentState = engine.getState();
         if (!currentState) {
