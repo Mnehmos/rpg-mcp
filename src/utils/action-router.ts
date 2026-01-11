@@ -19,7 +19,6 @@ import {
     matchAction,
     isGuidingError,
     formatGuidingError,
-    GuidingError,
     MatchResult
 } from './fuzzy-enum.js';
 
@@ -36,12 +35,15 @@ export type ActionHandler<TArgs = unknown, TResult = unknown> = (
 
 /**
  * Definition for a single action within a consolidated tool
+ *
+ * Note: Handler uses 'any' for flexibility since Zod schema validates at runtime.
+ * This allows typed handlers to be assigned without explicit casts.
  */
-export interface ActionDefinition<TArgs = unknown, TResult = unknown> {
-    /** Zod schema for action-specific parameters (merged with common schema) */
-    schema: z.ZodType<TArgs>;
-    /** Handler function for this action */
-    handler: ActionHandler<TArgs, TResult>;
+export interface ActionDefinition {
+    /** Zod schema for action-specific parameters */
+    schema: z.ZodType<any>;
+    /** Handler function for this action (validated args from schema) */
+    handler: (args: any) => Promise<unknown> | unknown;
     /** Optional aliases for this action (e.g., 'new' -> 'create') */
     aliases?: string[];
     /** Description for documentation */
