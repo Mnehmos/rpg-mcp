@@ -19,14 +19,24 @@
     "type": "git",
     "url": "git+https://github.com/Mnehmos/rpg-mcp.git"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "rpg",
+    "dnd",
+    "tabletop",
+    "game-engine",
+    "ai-game",
+    "procedural-generation",
+    "typescript",
+    "model-context-protocol"
+  ],
   "author": "Mnehmos",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Mnehmos/rpg-mcp/issues"
   },
   "homepage": "https://github.com/Mnehmos/rpg-mcp#readme",
-  "description": "",
+  "description": "Complete tabletop RPG game engine via MCP - D&D 5e combat, procedural worldgen, NPC memory, 28 consolidated tools",
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
