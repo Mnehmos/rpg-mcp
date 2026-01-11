@@ -159,9 +159,11 @@ export function createActionRouter<TActions extends string>(
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // STEP 3: Parse action-specific args
+        // STEP 3: Parse action-specific args (with resolved action)
         // ─────────────────────────────────────────────────────────────────────
-        const parseResult = definition.schema.safeParse(args);
+        // Replace the raw action with the resolved action for schema validation
+        const argsWithResolvedAction = { ...args, action };
+        const parseResult = definition.schema.safeParse(argsWithResolvedAction);
 
         if (!parseResult.success) {
             return formatValidationError(action, parseResult.error);
