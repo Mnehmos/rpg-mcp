@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { buildToolRegistry, getAllToolMetadata, getToolCategories } from './tool-registry.js';
+import { buildConsolidatedRegistry, getAllConsolidatedToolMetadata, getConsolidatedToolCategories } from './consolidated-registry.js';
 import { ToolMetadata } from './tool-metadata.js';
 
 // === SEARCH_TOOLS ===
@@ -82,7 +82,7 @@ function calculateRelevance(metadata: ToolMetadata, query: string): number {
 export async function handleSearchTools(args: SearchToolsArgs): Promise<{
   content: Array<{ type: 'text'; text: string }>;
 }> {
-  const allMetadata = getAllToolMetadata();
+  const allMetadata = getAllConsolidatedToolMetadata();
   let results = allMetadata;
   
   // Filter by category if provided
@@ -147,7 +147,7 @@ export async function handleSearchTools(args: SearchToolsArgs): Promise<{
       relevanceScore: t.relevanceScore,
       deferLoading: t.deferLoading
     })),
-    categories_available: getToolCategories(),
+    categories_available: getConsolidatedToolCategories(),
     suggestions
   };
   
@@ -175,7 +175,7 @@ export async function handleLoadToolSchema(args: LoadToolSchemaArgs): Promise<{
   suggestion: string;
   similarTools: string[];
 }> {
-  const registry = buildToolRegistry();
+  const registry = buildConsolidatedRegistry();
   const tool = registry[args.toolName];
   
   if (!tool) {

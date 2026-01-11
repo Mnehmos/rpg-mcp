@@ -1,0 +1,40 @@
+# Source files (dist/ is sufficient)
+src/
+
+# Tests
+tests/
+
+# Documentation
+docs/
+reference/
+
+# Development configs
+.github/
+.claude/
+.editorconfig
+.roomodes
+vitest.config.ts
+vitest.d.ts
+tsconfig.json
+esbuild.config.mjs
+
+# Project documentation (keep README.md and LICENSE)
+PROJECT_KNOWLEDGE.md
+CLAUDE.md
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts for binaries (separate distribution)
+dist-bundle/
+bin/
+
+# Test artifacts
+test-write.txt
+glama.json

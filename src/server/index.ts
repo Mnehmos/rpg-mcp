@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 // Meta-tools and registry
 import { MetaTools, handleSearchTools, handleLoadToolSchema } from './meta-tools.js';
-import { buildToolRegistry } from './tool-registry.js';
+import { buildConsolidatedRegistry } from './consolidated-registry.js';
 // MINIMAL_SCHEMA removed - must pass actual schema for MCP SDK to pass arguments
 
 // PubSub and utilities
@@ -23,10 +23,6 @@ import { registerEventTools } from './events.js';
 import { AuditLogger } from './audit.js';
 import { withSession } from './types.js';
 import { closeDb, getDbPath } from '../storage/index.js';
-
-// PubSub setters (needed for world/combat tools)
-import { setWorldPubSub } from './tools.js';
-import { setCombatPubSub } from './combat-tools.js';
 
 /**
  * Setup graceful shutdown handlers to ensure database is properly closed.
@@ -85,12 +81,10 @@ async function main() {
     version: '1.1.0'
   });
 
-  // Initialize PubSub
+  // Initialize PubSub for event subscription
   const pubsub = new PubSub();
-  setCombatPubSub(pubsub);
-  setWorldPubSub(pubsub);
 
-  // Register Event Tools
+  // Register Event Tools (subscribe_to_events)
   registerEventTools(server, pubsub);
 
   // Initialize AuditLogger
@@ -115,10 +109,10 @@ async function main() {
   );
 
   // =========================================================================
-  // ALL OTHER TOOLS: Register with MINIMAL schemas (85%+ token reduction)
+  // CONSOLIDATED TOOLS: 28 action-based tools (85% reduction from 195)
   // =========================================================================
-  
-  const registry = buildToolRegistry();
+
+  const registry = buildConsolidatedRegistry();
   const toolCount = Object.keys(registry).length;
   const sessionIdSchema = z.object({ sessionId: z.string().optional() });
   

@@ -31,7 +31,9 @@
       "Read(//f/**)",
       "mcp__mnehmos_ooda_mcp__batch_str_replace",
       "mcp__mnehmos_ooda_mcp__apply_diff",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(npm pack:*)",
+      "Bash(timeout 3 node:*)"
     ]
   }
 }
