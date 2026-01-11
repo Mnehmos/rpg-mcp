@@ -26,7 +26,8 @@
       "mcp__mnehmos_synch_mcp__get_active_context",
       "Bash(npx tsc:*)",
       "mcp__mnehmos_ooda_mcp__str_replace",
-      "mcp__mnehmos_ooda_mcp__read_file_lines"
+      "mcp__mnehmos_ooda_mcp__read_file_lines",
+      "Bash(node:*)"
     ]
   }
 }
