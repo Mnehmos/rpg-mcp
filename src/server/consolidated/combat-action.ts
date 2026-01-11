@@ -342,21 +342,25 @@ Use combat_map for terrain and visualization.`,
 
 export async function handleCombatAction(args: unknown, ctx: SessionContext): Promise<McpResponse> {
     currentContext = ctx;
+    const response = await router(args as Record<string, unknown>);
 
+    // Wrap response with ASCII formatting
     try {
-        const result = await router(args as Record<string, unknown>);
-        const parsed = JSON.parse(result.content[0].text);
-
+        const parsed = JSON.parse(response.content[0].text);
         let output = '';
 
         if (parsed.error) {
-            output = RichFormatter.header('Error', '❌');
+            output = RichFormatter.header('Combat Error', '❌');
             output += RichFormatter.alert(parsed.message || 'Unknown error', 'error');
             if (parsed.suggestions) {
-                output += '\n**Did you mean:**\n';
+                output += RichFormatter.section('Did you mean?');
                 parsed.suggestions.forEach((s: { action: string; similarity: number }) => {
                     output += `  • ${s.action} (${s.similarity}% match)\n`;
                 });
+            }
+            if (parsed.validActions) {
+                output += RichFormatter.section('Valid Actions');
+                output += RichFormatter.list(parsed.validActions);
             }
         } else {
             // Format based on action type
@@ -367,36 +371,58 @@ export async function handleCombatAction(args: unknown, ctx: SessionContext): Pr
                         output += RichFormatter.keyValue({
                             'Result': parsed.hit ? '🎯 HIT' : '💨 MISS',
                             'Roll': parsed.roll || 'N/A',
-                            'Damage': parsed.damage || 0
+                            'vs AC': parsed.targetAC || 'N/A',
+                            'Damage': parsed.hit ? (parsed.damage || 0) : '-'
                         });
+                        if (parsed.damageType) {
+                            output += `Damage type: ${parsed.damageType}\n`;
+                        }
                     }
                     break;
                 case 'heal':
                     output = RichFormatter.header('Healing', '💚');
-                    if (parsed.amount) {
-                        output += RichFormatter.keyValue({ 'HP Restored': parsed.amount });
-                    }
+                    output += RichFormatter.keyValue({
+                        'Target': parsed.targetId || 'Unknown',
+                        'HP Restored': parsed.amount || 0
+                    });
                     break;
                 case 'move':
                     output = RichFormatter.header('Movement', '🏃');
+                    output += RichFormatter.keyValue({
+                        'Actor': parsed.actorId,
+                        'Position': parsed.targetPosition ? `(${parsed.targetPosition.x}, ${parsed.targetPosition.y})` : 'N/A'
+                    });
                     break;
                 case 'cast_spell':
                     output = RichFormatter.header('Spell Cast', '✨');
+                    output += RichFormatter.keyValue({
+                        'Spell': parsed.spellName || 'Unknown',
+                        'Caster': parsed.actorId,
+                        'Target': parsed.targetId || parsed.targetIds?.join(', ') || 'N/A'
+                    });
                     break;
                 case 'disengage':
                     output = RichFormatter.header('Disengage', '🔙');
+                    output += `${parsed.actorId} disengages, avoiding opportunity attacks.\n`;
                     break;
                 case 'dash':
                     output = RichFormatter.header('Dash', '💨');
+                    output += `${parsed.actorId} dashes, doubling movement speed.\n`;
                     break;
                 case 'dodge':
                     output = RichFormatter.header('Dodge', '🛡️');
+                    output += `${parsed.actorId} takes the Dodge action.\n`;
                     break;
                 case 'help':
                     output = RichFormatter.header('Help', '🤝');
+                    output += `${parsed.actorId} helps ${parsed.targetId}.\n`;
                     break;
                 case 'ready':
                     output = RichFormatter.header('Ready Action', '⏳');
+                    output += RichFormatter.keyValue({
+                        'Action': parsed.readiedAction,
+                        'Trigger': parsed.trigger
+                    });
                     break;
                 default:
                     output = RichFormatter.header('Combat Action', '⚔️');
@@ -409,19 +435,18 @@ export async function handleCombatAction(args: unknown, ctx: SessionContext): Pr
             if (parsed.rawText) {
                 output += '\n' + parsed.rawText + '\n';
             } else if (parsed.message && !parsed.effect) {
-                output += '\n' + parsed.message + '\n';
+                output += parsed.message + '\n';
             }
         }
 
+        // Embed JSON for programmatic access
         output += RichFormatter.embedJson(parsed, 'COMBAT_ACTION');
 
-        return {
-            content: [{
-                type: 'text' as const,
-                text: output
-            }]
-        };
-    } finally {
         currentContext = null;
+        return { content: [{ type: 'text', text: output }] };
+    } catch {
+        // If JSON parsing fails, return original response
+        currentContext = null;
+        return response;
     }
 }

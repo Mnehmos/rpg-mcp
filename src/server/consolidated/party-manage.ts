@@ -35,6 +35,7 @@ import {
     PartyContext
 } from '../../schema/party.js';
 import { createActionRouter, ActionDefinition, McpResponse } from '../../utils/action-router.js';
+import { RichFormatter } from '../utils/formatter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -695,8 +696,24 @@ const router = createActionRouter({
 export const PartyManageTool = {
     name: 'party_manage',
     description: `Manage adventuring parties and members.
+
+👥 PARTY LIFECYCLE:
+1. Create characters with character_manage first
+2. create - Form a new party (can include initialMembers)
+3. add_member - Add characters to existing party
+
+⚔️ WORKFLOW:
+- set_leader: Designate party leader for social interactions
+- set_active: Switch POV character for narrative focus
+- get_context: AI-friendly party summary for story generation
+
+🗺️ TRAVEL:
+- move: Relocate party on world map (requires worldId)
+- get_position: Query current party location
+- get_in_region: Find nearby parties
+
 Actions: create, get, list, update, delete, add_member, remove_member, update_member, set_leader, set_active, get_members, get_context, get_unassigned, move, get_position, get_in_region
-Aliases: new/form->create, fetch/find->get, all/query->list, modify/edit->update, disband/remove->delete, join/recruit->add_member, kick/leave->remove_member, leader/promote->set_leader, active/pov->set_active, members/roster->get_members, context/summary->get_context, unassigned/available->get_unassigned, travel/goto->move, position/where->get_position, nearby/in_area->get_in_region`,
+Aliases: new/form->create, join/recruit->add_member, leader->set_leader, active/pov->set_active, roster->get_members, travel/goto->move`,
     inputSchema: z.object({
         action: z.string().describe('Action to perform'),
         // Party identifiers
@@ -730,5 +747,188 @@ Aliases: new/form->create, fetch/find->get, all/query->list, modify/edit->update
 };
 
 export async function handlePartyManage(args: unknown, _ctx: SessionContext): Promise<McpResponse> {
-    return router(args as Record<string, unknown>);
+    const response = await router(args as Record<string, unknown>);
+
+    // Wrap response with ASCII formatting
+    try {
+        const data = JSON.parse(response.content[0].text);
+        const action = String((args as Record<string, unknown>).action || '').toLowerCase();
+        let output = '';
+
+        if (data.error) {
+            output = RichFormatter.header('Party Error', '❌');
+            output += RichFormatter.alert(data.message || 'Unknown error', 'error');
+            if (data.validActions) {
+                output += RichFormatter.section('Valid Actions');
+                output += RichFormatter.list(data.validActions);
+            }
+        } else if (action === 'create' || action === 'new' || action === 'form') {
+            output = RichFormatter.header(`Party Formed: ${data.party?.name || 'Unknown'}`, '👥');
+            output += RichFormatter.keyValue({
+                'ID': data.party?.id,
+                'Status': data.party?.status || 'active',
+                'Members': data.memberCount || 0,
+                'Leader': data.leaderId || 'None'
+            });
+            if (data.members?.length) {
+                output += RichFormatter.section('Initial Members');
+                const rows = data.members.map((m: any) => [m.name, m.role]);
+                output += RichFormatter.table(['Name', 'Role'], rows);
+            }
+        } else if (action === 'get' || action === 'fetch' || action === 'find') {
+            output = RichFormatter.header(`${data.name}`, '👥');
+            output += RichFormatter.keyValue({
+                'ID': data.id,
+                'Status': data.status || 'active',
+                'Formation': data.formation || 'standard',
+                'Location': data.currentLocation || 'Unknown',
+                'Members': data.memberCount || 0
+            });
+            if (data.members?.length) {
+                output += RichFormatter.section('Party Members');
+                const rows = data.members.map((m: any) => [
+                    m.character?.name || m.characterId,
+                    m.role,
+                    m.isActive ? '★' : ''
+                ]);
+                output += RichFormatter.table(['Name', 'Role', 'Active'], rows);
+            }
+        } else if (action === 'list' || action === 'all' || action === 'query') {
+            output = RichFormatter.header(`Parties (${data.count})`, '👥');
+            if (data.filter?.status) {
+                output += `*Filtered by: ${data.filter.status}*\n\n`;
+            }
+            if (data.parties?.length) {
+                const rows = data.parties.map((p: any) => [
+                    p.name,
+                    p.status || 'active',
+                    p.memberCount || 0,
+                    p.currentLocation || 'Unknown'
+                ]);
+                output += RichFormatter.table(['Name', 'Status', 'Members', 'Location'], rows);
+            } else {
+                output += '*No parties found*\n';
+            }
+        } else if (action === 'update' || action === 'modify' || action === 'edit') {
+            output = RichFormatter.header(`Party Updated: ${data.name}`, '✏️');
+            output += data.message + '\n';
+        } else if (action === 'delete' || action === 'disband' || action === 'remove') {
+            output = RichFormatter.header('Party Disbanded', '🗑️');
+            output += `ID: ${data.partyId}\n`;
+            output += data.message + '\n';
+        } else if (action === 'add_member' || action === 'join' || action === 'recruit') {
+            output = RichFormatter.header('Member Joined', '➕');
+            output += RichFormatter.keyValue({
+                'Character': data.characterName,
+                'Party': data.partyName,
+                'Role': data.member?.role || 'member'
+            });
+        } else if (action === 'remove_member' || action === 'kick' || action === 'leave') {
+            output = RichFormatter.header('Member Removed', '➖');
+            output += `${data.characterName || data.characterId} has left the party.\n`;
+        } else if (action === 'update_member' || action === 'modify_member') {
+            output = RichFormatter.header('Member Updated', '✏️');
+            output += data.message + '\n';
+        } else if (action === 'set_leader' || action === 'leader' || action === 'promote') {
+            output = RichFormatter.header('New Leader', '👑');
+            output += `${data.newLeaderName} is now leading the party!\n`;
+        } else if (action === 'set_active' || action === 'active' || action === 'pov') {
+            output = RichFormatter.header('Active Character', '⭐');
+            output += `POV switched to ${data.activeCharacterName}.\n`;
+        } else if (action === 'get_members' || action === 'members' || action === 'roster') {
+            output = RichFormatter.header(`${data.partyName} Roster`, '📋');
+            output += RichFormatter.keyValue({
+                'Leader': data.leader?.character?.name || 'None',
+                'Active': data.activeCharacter?.character?.name || 'None',
+                'Members': data.memberCount || 0
+            });
+            if (data.members?.length) {
+                output += RichFormatter.section('Members');
+                const rows = data.members.map((m: any) => [
+                    m.character?.name || m.characterId,
+                    m.role,
+                    `${m.character?.hp || '?'}/${m.character?.maxHp || '?'}`,
+                    m.isActive ? '★' : ''
+                ]);
+                output += RichFormatter.table(['Name', 'Role', 'HP', 'Active'], rows);
+            }
+        } else if (action === 'get_context' || action === 'context' || action === 'summary' || action === 'status') {
+            output = RichFormatter.header(`${data.party?.name || 'Party'} Context`, '📊');
+            if (data.party) {
+                output += RichFormatter.keyValue({
+                    'Status': data.party.status,
+                    'Formation': data.party.formation,
+                    'Location': data.party.location || 'Unknown'
+                });
+            }
+            if (data.leader) {
+                output += RichFormatter.section('Leader');
+                output += `${data.leader.name} (Lv${data.leader.level}) - ${data.leader.hp}/${data.leader.maxHp} HP\n`;
+            }
+            if (data.activeCharacter) {
+                output += RichFormatter.section('Active Character');
+                output += `${data.activeCharacter.name} (Lv${data.activeCharacter.level}) - ${data.activeCharacter.hp}/${data.activeCharacter.maxHp} HP\n`;
+            }
+            if (data.members?.length) {
+                output += RichFormatter.section('Party Status');
+                const rows = data.members.map((m: any) => [m.name, m.role, m.hp, m.status]);
+                output += RichFormatter.table(['Name', 'Role', 'HP', 'Status'], rows);
+            }
+            if (data.activeQuest) {
+                output += RichFormatter.section('Active Quest');
+                output += `${data.activeQuest.name} (${data.activeQuest.progress})\n`;
+                if (data.activeQuest.currentObjective) {
+                    output += `*Current: ${data.activeQuest.currentObjective}*\n`;
+                }
+            }
+        } else if (action === 'get_unassigned' || action === 'unassigned' || action === 'available') {
+            output = RichFormatter.header(`Unassigned Characters (${data.count})`, '👤');
+            if (data.characters?.length) {
+                const rows = data.characters.map((c: any) => [c.name, c.characterClass || 'Adventurer', `Lv${c.level || 1}`]);
+                output += RichFormatter.table(['Name', 'Class', 'Level'], rows);
+            } else {
+                output += '*No unassigned characters*\n';
+            }
+        } else if (action === 'move' || action === 'travel' || action === 'goto') {
+            output = RichFormatter.header('Party Moved', '🗺️');
+            output += RichFormatter.keyValue({
+                'Party': data.party?.name,
+                'Location': data.newPosition?.location,
+                'Position': `(${data.newPosition?.x}, ${data.newPosition?.y})`
+            });
+        } else if (action === 'get_position' || action === 'position' || action === 'where') {
+            output = RichFormatter.header(`${data.partyName} Location`, '📍');
+            if (data.position) {
+                output += RichFormatter.keyValue({
+                    'Location': data.position.locationName || 'Unknown',
+                    'Position': data.position.x !== null ? `(${data.position.x}, ${data.position.y})` : 'Not set'
+                });
+            }
+        } else if (action === 'get_in_region' || action === 'nearby' || action === 'in_area') {
+            output = RichFormatter.header(`Nearby Parties (${data.count})`, '🔍');
+            output += `Search area: (${data.searchArea?.x}, ${data.searchArea?.y}) radius ${data.searchArea?.radius}\n\n`;
+            if (data.parties?.length) {
+                const rows = data.parties.map((p: any) => [
+                    p.name,
+                    p.locationName || 'Unknown',
+                    `(${p.positionX ?? '?'}, ${p.positionY ?? '?'})`
+                ]);
+                output += RichFormatter.table(['Party', 'Location', 'Position'], rows);
+            } else {
+                output += '*No parties found in this area*\n';
+            }
+        } else {
+            // Fallback for unknown actions
+            output = RichFormatter.header('Party Operation', '👥');
+            output += JSON.stringify(data, null, 2) + '\n';
+        }
+
+        // Embed JSON for programmatic access
+        output += RichFormatter.embedJson(data, 'PARTY_MANAGE');
+
+        return { content: [{ type: 'text', text: output }] };
+    } catch {
+        // If JSON parsing fails, return original response
+        return response;
+    }
 }

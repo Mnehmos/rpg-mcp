@@ -441,7 +441,23 @@ const router = createActionRouter({
 
 export const InventoryManageTool = {
     name: 'inventory_manage',
-    description: `Unified inventory management. Actions: ${ACTIONS.join(', ')}. Aliases: add→give, take→remove, trade→transfer, consume→use, wield→equip, doff→unequip, list→get, detailed→get_detailed.`,
+    description: `Manage character inventories and equipment.
+
+📦 ITEM WORKFLOW:
+1. Create items with item_manage first (or use existing items)
+2. give - Add items to character inventory
+3. equip - Slot weapons/armor (updates AC automatically)
+
+🔄 COMMON ACTIONS:
+- transfer: Move items between characters
+- use: Consume potions/scrolls (removes item, shows effect)
+- get_detailed: Show weight, capacity, and item details
+
+⚔️ EQUIPMENT SLOTS:
+mainhand, offhand, armor, head, feet, accessory
+
+Actions: ${ACTIONS.join(', ')}
+Aliases: add→give, take→remove, trade→transfer, consume→use, wield→equip`,
     inputSchema: z.object({
         action: z.string().describe(`Action to perform: ${ACTIONS.join(', ')}`),
         characterId: z.string().optional().describe('Character ID'),
@@ -459,82 +475,95 @@ export const InventoryManageTool = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function handleInventoryManage(args: unknown, _ctx: SessionContext): Promise<McpResponse> {
-    const result = await router(args as Record<string, unknown>);
+    const response = await router(args as Record<string, unknown>);
 
-    // Parse the router result for rich formatting
-    const parsed = JSON.parse(result.content[0].text);
+    // Wrap response with ASCII formatting
+    try {
+        const parsed = JSON.parse(response.content[0].text);
+        let output = '';
 
-    let output = '';
-
-    if (parsed.error) {
-        output = RichFormatter.header('Error', '❌');
-        output += RichFormatter.alert(parsed.message || 'Unknown error', 'error');
-        if (parsed.suggestions) {
-            output += '\n**Did you mean:**\n';
-            parsed.suggestions.forEach((s: { action: string; similarity: number }) => {
-                output += `  • ${s.action} (${s.similarity}% match)\n`;
+        if (parsed.error) {
+            output = RichFormatter.header('Inventory Error', '❌');
+            output += RichFormatter.alert(parsed.message || 'Unknown error', 'error');
+            if (parsed.suggestions) {
+                output += RichFormatter.section('Did you mean?');
+                parsed.suggestions.forEach((s: { action: string; similarity: number }) => {
+                    output += `  • ${s.action} (${s.similarity}% match)\n`;
+                });
+            }
+            if (parsed.validActions) {
+                output += RichFormatter.section('Valid Actions');
+                output += RichFormatter.list(parsed.validActions);
+            }
+        } else if (parsed.actionType === 'give' || parsed.actionType === 'remove') {
+            output = RichFormatter.header(parsed.actionType === 'give' ? 'Item Added' : 'Item Removed', parsed.actionType === 'give' ? '➕' : '➖');
+            output += RichFormatter.keyValue({
+                'Item': parsed.itemName,
+                'Quantity': parsed.quantity,
+                'Character': parsed.characterId,
             });
+            output += RichFormatter.success(parsed.message);
+        } else if (parsed.actionType === 'transfer') {
+            output = RichFormatter.header('Item Transferred', '🔀');
+            output += RichFormatter.keyValue({
+                'Item': parsed.itemName,
+                'Quantity': parsed.quantity,
+                'From': parsed.fromCharacterId,
+                'To': parsed.toCharacterId,
+            });
+            output += RichFormatter.success(parsed.message);
+        } else if (parsed.actionType === 'use') {
+            output = RichFormatter.header('Item Used', '✨');
+            output += RichFormatter.keyValue({
+                'Item': parsed.itemName,
+                'Target': parsed.targetId,
+            });
+            output += RichFormatter.section('Effect');
+            output += `${parsed.effect}\n`;
+            output += RichFormatter.success(parsed.message);
+        } else if (parsed.actionType === 'equip' || parsed.actionType === 'unequip') {
+            output = RichFormatter.header(parsed.actionType === 'equip' ? 'Item Equipped' : 'Item Unequipped', parsed.actionType === 'equip' ? '⚔️' : '📦');
+            output += RichFormatter.keyValue({
+                'Item': parsed.itemName,
+                'Character': parsed.characterId,
+                ...(parsed.slot && { 'Slot': parsed.slot }),
+            });
+            if (parsed.acChange) {
+                output += RichFormatter.alert(parsed.acChange, 'info');
+            }
+            output += RichFormatter.success(parsed.message);
+        } else if (parsed.actionType === 'get' || parsed.actionType === 'get_detailed') {
+            output = RichFormatter.header('Inventory', '🎒');
+            output += RichFormatter.keyValue({
+                'Character': parsed.characterId,
+                ...(parsed.totalWeight !== undefined && {
+                    'Weight': `${parsed.totalWeight}/${parsed.capacity} lbs`
+                }),
+                ...(parsed.gold !== undefined && { 'Gold': parsed.gold }),
+                'Items': parsed.itemCount || 0
+            });
+            if (parsed.inventory?.length) {
+                output += RichFormatter.inventory(parsed.inventory.map((i: { item?: { name: string }; itemId: string; quantity: number; equipped: boolean; slot?: string }) => ({
+                    name: i.item?.name || i.itemId,
+                    quantity: i.quantity,
+                    equipped: i.equipped,
+                    slot: i.slot,
+                })));
+            } else {
+                output += '*Inventory is empty*\n';
+            }
+        } else {
+            // Fallback
+            output = RichFormatter.header('Inventory Operation', '🎒');
+            output += JSON.stringify(parsed, null, 2) + '\n';
         }
-    } else if (parsed.actionType === 'give' || parsed.actionType === 'remove') {
-        output = RichFormatter.header(parsed.actionType === 'give' ? 'Item Added' : 'Item Removed', parsed.actionType === 'give' ? '➕' : '➖');
-        output += RichFormatter.keyValue({
-            'Item': parsed.itemName,
-            'Quantity': parsed.quantity,
-            'Character': `\`${parsed.characterId}\``,
-        });
-        output += RichFormatter.success(parsed.message);
-    } else if (parsed.actionType === 'transfer') {
-        output = RichFormatter.header('Item Transferred', '🔀');
-        output += RichFormatter.keyValue({
-            'Item': parsed.itemName,
-            'Quantity': parsed.quantity,
-            'From': `\`${parsed.fromCharacterId}\``,
-            'To': `\`${parsed.toCharacterId}\``,
-        });
-        output += RichFormatter.success(parsed.message);
-    } else if (parsed.actionType === 'use') {
-        output = RichFormatter.header('Item Used', '✨');
-        output += RichFormatter.keyValue({
-            'Item': parsed.itemName,
-            'Target': `\`${parsed.targetId}\``,
-        });
-        output += RichFormatter.section('Effect');
-        output += `${parsed.effect}\n`;
-        output += RichFormatter.success(parsed.message);
-    } else if (parsed.actionType === 'equip' || parsed.actionType === 'unequip') {
-        output = RichFormatter.header(parsed.actionType === 'equip' ? 'Item Equipped' : 'Item Unequipped', parsed.actionType === 'equip' ? '⚔️' : '📦');
-        output += RichFormatter.keyValue({
-            'Item': parsed.itemName,
-            'Character': `\`${parsed.characterId}\``,
-            ...(parsed.slot && { 'Slot': parsed.slot }),
-        });
-        if (parsed.acChange) {
-            output += RichFormatter.alert(parsed.acChange, 'info');
-        }
-        output += RichFormatter.success(parsed.message);
-    } else if (parsed.actionType === 'get' || parsed.actionType === 'get_detailed') {
-        output = RichFormatter.header('Inventory', '🎒');
-        output += RichFormatter.keyValue({
-            'Character': `\`${parsed.characterId}\``,
-            ...(parsed.totalWeight !== undefined && {
-                'Weight': `${parsed.totalWeight}/${parsed.capacity} lbs`
-            }),
-            ...(parsed.gold !== undefined && { 'Gold': parsed.gold }),
-        });
-        output += RichFormatter.inventory(parsed.inventory.map((i: { item?: { name: string }; itemId: string; quantity: number; equipped: boolean; slot?: string }) => ({
-            name: i.item?.name || i.itemId,
-            quantity: i.quantity,
-            equipped: i.equipped,
-            slot: i.slot,
-        })));
+
+        // Embed JSON for programmatic access
+        output += RichFormatter.embedJson(parsed, 'INVENTORY_MANAGE');
+
+        return { content: [{ type: 'text', text: output }] };
+    } catch {
+        // If JSON parsing fails, return original response
+        return response;
     }
-
-    output += RichFormatter.embedJson(parsed, 'INVENTORY_MANAGE');
-
-    return {
-        content: [{
-            type: 'text' as const,
-            text: output
-        }]
-    };
 }

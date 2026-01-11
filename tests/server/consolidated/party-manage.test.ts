@@ -13,6 +13,20 @@ import { CharacterRepository } from '../../../src/storage/repos/character.repo.j
 import { SessionContext } from '../../../src/server/types.js';
 import { randomUUID } from 'crypto';
 
+/**
+ * Extract JSON from ASCII-formatted response
+ * Handles both embedded JSON (new format) and direct JSON (old format)
+ */
+function extractJson(text: string): unknown {
+    // Try embedded JSON first (new format with RichFormatter.embedJson)
+    const jsonMatch = text.match(/<!-- \w+_JSON\n([\s\S]*?)\n\w+_JSON -->/);
+    if (jsonMatch) {
+        return JSON.parse(jsonMatch[1]);
+    }
+    // Fall back to direct JSON parse (old format)
+    return JSON.parse(text);
+}
+
 describe('party_manage consolidated tool', () => {
     let ctx: SessionContext;
     let charId1: string;
@@ -98,7 +112,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'The Fellowship'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.party.name).toBe('The Fellowship');
             expect(parsed.party.status).toBe('active');
@@ -115,7 +129,7 @@ describe('party_manage consolidated tool', () => {
                 ]
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.memberCount).toBe(2);
             expect(parsed.leaderId).toBe(charId1);
@@ -127,7 +141,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
 
@@ -137,7 +151,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -153,7 +167,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             // Then get
             const result = await handlePartyManage({
@@ -161,7 +175,7 @@ describe('party_manage consolidated tool', () => {
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.id).toBe(created.party.id);
             expect(parsed.name).toBe('Test Party');
         });
@@ -172,7 +186,7 @@ describe('party_manage consolidated tool', () => {
                 partyId: 'non-existent-id'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('not found');
         });
@@ -182,14 +196,14 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'fetch',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.name).toBe('Test Party');
         });
     });
@@ -204,7 +218,7 @@ describe('party_manage consolidated tool', () => {
             await handlePartyManage({ action: 'create', name: 'Party 2' }, ctx);
 
             const result = await handlePartyManage({ action: 'list' }, ctx);
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
 
             expect(parsed.count).toBe(2);
             expect(parsed.parties.length).toBe(2);
@@ -216,13 +230,13 @@ describe('party_manage consolidated tool', () => {
                 status: 'active'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.filter.status).toBe('active');
         });
 
         it('should accept alias "all"', async () => {
             const result = await handlePartyManage({ action: 'all' }, ctx);
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.parties).toBeDefined();
         });
     });
@@ -237,7 +251,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Original Name'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'update',
@@ -246,7 +260,7 @@ describe('party_manage consolidated tool', () => {
                 formation: 'defensive'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.name).toBe('Updated Name');
             expect(parsed.formation).toBe('defensive');
@@ -257,7 +271,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'modify',
@@ -265,7 +279,7 @@ describe('party_manage consolidated tool', () => {
                 description: 'New description'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -280,14 +294,14 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'To Be Deleted'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'delete',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.message).toContain('deleted');
         });
@@ -297,14 +311,14 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'To Be Disbanded'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'disband',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -319,7 +333,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'add_member',
@@ -328,7 +342,7 @@ describe('party_manage consolidated tool', () => {
                 role: 'member'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.characterName).toBe('Gandalf');
         });
@@ -338,7 +352,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'join',
@@ -346,7 +360,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -358,7 +372,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'remove_member',
@@ -366,7 +380,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
 
@@ -376,7 +390,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'kick',
@@ -384,7 +398,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -399,7 +413,7 @@ describe('party_manage consolidated tool', () => {
                     { characterId: charId2, role: 'member' }
                 ]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'set_leader',
@@ -407,7 +421,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.newLeaderId).toBe(charId1);
         });
@@ -418,7 +432,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'leader',
@@ -426,7 +440,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -438,7 +452,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'set_active',
@@ -446,7 +460,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.activeCharacterId).toBe(charId1);
         });
@@ -457,7 +471,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'pov',
@@ -465,7 +479,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -480,14 +494,14 @@ describe('party_manage consolidated tool', () => {
                     { characterId: charId2, role: 'member' }
                 ]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'get_members',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.memberCount).toBe(2);
             expect(parsed.members).toBeDefined();
         });
@@ -498,14 +512,14 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'roster',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.members).toBeDefined();
         });
     });
@@ -521,7 +535,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1, role: 'leader' }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'get_context',
@@ -529,7 +543,7 @@ describe('party_manage consolidated tool', () => {
                 verbosity: 'standard'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.party).toBeDefined();
             expect(parsed.members).toBeDefined();
             expect(parsed.verbosity).toBe('standard');
@@ -541,14 +555,14 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'summary',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.party).toBeDefined();
         });
     });
@@ -559,7 +573,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'get_unassigned'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.characters).toBeDefined();
             expect(parsed.count).toBeGreaterThanOrEqual(0);
         });
@@ -569,7 +583,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'available'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.characters).toBeDefined();
         });
     });
@@ -584,7 +598,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'move',
@@ -594,7 +608,7 @@ describe('party_manage consolidated tool', () => {
                 locationName: 'The Shire'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed.newPosition.x).toBe(10);
             expect(parsed.newPosition.y).toBe(20);
@@ -606,7 +620,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'travel',
@@ -616,7 +630,7 @@ describe('party_manage consolidated tool', () => {
                 locationName: 'Rivendell'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
         });
     });
@@ -627,14 +641,14 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'get_position',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.partyId).toBe(created.party.id);
             expect(parsed.position).toBeDefined();
         });
@@ -644,14 +658,14 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'where',
                 partyId: created.party.id
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.position).toBeDefined();
         });
     });
@@ -666,7 +680,7 @@ describe('party_manage consolidated tool', () => {
                 radiusSquares: 10
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.parties).toBeDefined();
             expect(parsed.searchArea).toBeDefined();
         });
@@ -679,7 +693,7 @@ describe('party_manage consolidated tool', () => {
                 y: 0
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.parties).toBeDefined();
         });
     });
@@ -695,7 +709,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Fuzzy Party'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.success).toBe(true);
             expect(parsed._fuzzyMatch).toBeDefined();
             expect(parsed._fuzzyMatch.resolved).toBe('create');
@@ -707,7 +721,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test Party',
                 initialMembers: [{ characterId: charId1 }]
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'members',
@@ -715,7 +729,7 @@ describe('party_manage consolidated tool', () => {
             }, ctx);
 
             // Should match "members" alias which resolves to "get_members"
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.members).toBeDefined();
         });
 
@@ -724,7 +738,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'xyz123'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe('invalid_action');
             expect(parsed.suggestions).toBeDefined();
         });
@@ -740,7 +754,7 @@ describe('party_manage consolidated tool', () => {
                 name: 'Test'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('action');
         });
@@ -751,7 +765,7 @@ describe('party_manage consolidated tool', () => {
                 partyId: 'non-existent'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('not found');
         });
@@ -761,7 +775,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'add_member',
@@ -769,7 +783,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: 'non-existent'
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('not found');
         });
@@ -779,7 +793,7 @@ describe('party_manage consolidated tool', () => {
                 action: 'create',
                 name: 'Test Party'
             }, ctx);
-            const created = JSON.parse(createResult.content[0].text);
+            const created = extractJson(createResult.content[0].text);
 
             const result = await handlePartyManage({
                 action: 'set_leader',
@@ -787,7 +801,7 @@ describe('party_manage consolidated tool', () => {
                 characterId: charId1
             }, ctx);
 
-            const parsed = JSON.parse(result.content[0].text);
+            const parsed = extractJson(result.content[0].text);
             expect(parsed.error).toBe(true);
             expect(parsed.message).toContain('not a member');
         });
