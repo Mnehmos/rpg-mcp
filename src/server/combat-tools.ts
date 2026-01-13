@@ -1269,14 +1269,29 @@ export async function handleExecuteCombatAction(args: unknown, ctx: SessionConte
             }
         }
 
-        // 3. Damage
+        // 3. Damage - auto-calculate from multiple sources
         if (damage === undefined || damage === 0) {
+            // First: try preset on participant
             if (actor?.attackDamage) {
                 damage = actor.attackDamage;
             }
-        }
-        if (!damage && damage !== 0) { // check strictly against undefined/null/empty string, allow 0 if explicitly intended? No, 0 damage usually means error.
-             throw new Error('Attack action requires damage (could not be auto-calculated from actor stats)');
+            // Second: try to load from character DB
+            else {
+                const dmgDb = getDb(process.env.NODE_ENV === 'test' ? ':memory:' : 'rpg.db');
+                const dmgCharRepo = new CharacterRepository(dmgDb);
+                const character = dmgCharRepo.findById(parsed.actorId);
+                if (character?.stats) {
+                    // Default damage: 1d8 + STR/DEX mod (simple weapon heuristic)
+                    const strMod = Math.floor((character.stats.str - 10) / 2);
+                    const dexMod = Math.floor((character.stats.dex - 10) / 2);
+                    const abilityMod = Math.max(strMod, dexMod);
+                    damage = abilityMod >= 0 ? `1d8+${abilityMod}` : `1d8${abilityMod}`;
+                }
+            }
+            // Third: fallback to simple 1d6 damage
+            if (!damage) {
+                damage = '1d6';
+            }
         }
 
         if (!parsed.targetId) {

@@ -36,7 +36,8 @@
       "Bash(timeout 3 node:*)",
       "Bash(git branch:*)",
       "Bash(git tag:*)",
-      "Bash(npm version:*)"
+      "Bash(npm version:*)",
+      "Bash(npm run build:binaries:*)"
     ]
   }
 }
