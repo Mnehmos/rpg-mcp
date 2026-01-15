@@ -3,6 +3,9 @@
   "version": "1.0.1",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "rpg-mcp": "./dist/server/index.js"
+},
   "scripts": {
     "test": "vitest run",
     "test:ci": "vitest run --reporter=basic",
